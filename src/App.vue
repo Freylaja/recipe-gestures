@@ -5,20 +5,108 @@ import { GestureEngine, type GestureEvent } from "./gestures";
 import { TimerController } from "./timer";
 import { loadObjectDetectionModel, detectObjects } from "./objectDetection";
 
+import IngredientScanner from "./components/IngredientScanner.vue";
+import RecipeView from "./components/RecipeView.vue";
+import GestureOverlays from "./components/GestureOverlays.vue";
+import RecipeSelection from "./components/RecipeSelection.vue";
+
 const videoRef = ref<HTMLVideoElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 
-// Ingredients list - based on recipe, only some are auto-detectable
-const ingredients = ref([
-  { name: "Äpfel", checked: false, detectClass: "apple" },
-  { name: "Mehl", checked: false, detectClass: null },
-  { name: "Zucker", checked: false, detectClass: null },
-  { name: "Eier", checked: false, detectClass: null },
-  { name: "Öl", checked: false, detectClass: "bottle" },
-  { name: "Backpulver", checked: false, detectClass: null },
-  { name: "Zimt", checked: false, detectClass: null },
-  { name: "Puderzucker", checked: false, detectClass: null }
+// Recipes list
+const recipes = ref([
+  {
+    id: '1',
+    title: 'Apfelkuchen',
+    prepTime: '60-70 Min.',
+    servings: 8,
+    difficulty: 'Mittel',
+    category: 'Kuchen',
+    ingredients: [
+      { name: "Äpfel", checked: false, detectClass: "apple" },
+      { name: "Mehl", checked: false, detectClass: null },
+      { name: "Zucker", checked: false, detectClass: null },
+      { name: "Eier", checked: false, detectClass: null },
+      { name: "Öl", checked: false, detectClass: "bottle" },
+      { name: "Backpulver", checked: false, detectClass: null },
+      { name: "Zimt", checked: false, detectClass: null },
+      { name: "Puderzucker", checked: false, detectClass: null }
+    ],
+    steps: [
+      "Ofen auf 180°C Ober-/Unterhitze vorheizen.",
+      "Äpfel schälen, entkernen und in dünne Spalten schneiden.",
+      "Mehl mit Backpulver und Zimt in einer Schüssel vermischen.",
+      "Eier, Zucker und Öl in einer separaten Schüssel schaumig schlagen.",
+      "Mehlmischung unter die Ei-Masse heben, bis ein glatter Teig entsteht.",
+      "Apfelspalten vorsichtig unter den Teig heben.",
+      "Teig in eine gefettete Springform (26 cm) füllen und glatt streichen.",
+      "Kuchen im vorgeheizten Ofen etwa 45-50 Minuten backen.",
+      "Stäbchenprobe machen: Holzstäbchen sollte sauber herauskommen.",
+      "Kuchen aus dem Ofen nehmen und 10 Minuten in der Form abkühlen lassen.",
+      "Kuchen aus der Form lösen und auf einem Kuchengitter vollständig auskühlen lassen.",
+      "Mit Puderzucker bestäuben und servieren. Guten Appetit!"
+    ]
+  },
+  {
+    id: '2',
+    title: 'Spaghetti Carbonara',
+    prepTime: '25 Min.',
+    servings: 4,
+    difficulty: 'Einfach',
+    category: 'Pasta',
+    ingredients: [
+      { name: "Spaghetti", checked: false, detectClass: null },
+      { name: "Eier", checked: false, detectClass: null },
+      { name: "Speck", checked: false, detectClass: null },
+      { name: "Parmesan", checked: false, detectClass: null },
+      { name: "Pfeffer", checked: false, detectClass: null }
+    ],
+    steps: [
+      "Spaghetti in kochendem Salzwasser nach Packungsanweisung al dente kochen.",
+      "Speck in kleine Würfel schneiden.",
+      "Speck in einer Pfanne knusprig braten.",
+      "Eier mit geriebenem Parmesan verquirlen und mit Pfeffer würzen.",
+      "Gekochte Spaghetti abgießen, dabei etwas Nudelwasser auffangen.",
+      "Spaghetti zum Speck in die Pfanne geben und gut vermischen.",
+      "Pfanne vom Herd nehmen und Ei-Mischung unter ständigem Rühren zugeben.",
+      "Bei Bedarf mit Nudelwasser verdünnen, bis eine cremige Sauce entsteht.",
+      "Sofort servieren mit extra Parmesan und schwarzem Pfeffer."
+    ]
+  },
+  {
+    id: '3',
+    title: 'Schokoladenkuchen',
+    prepTime: '50 Min.',
+    servings: 12,
+    difficulty: 'Einfach',
+    category: 'Kuchen',
+    ingredients: [
+      { name: "Mehl", checked: false, detectClass: null },
+      { name: "Kakao", checked: false, detectClass: null },
+      { name: "Zucker", checked: false, detectClass: null },
+      { name: "Eier", checked: false, detectClass: null },
+      { name: "Butter", checked: false, detectClass: null },
+      { name: "Milch", checked: false, detectClass: null },
+      { name: "Backpulver", checked: false, detectClass: null }
+    ],
+    steps: [
+      "Ofen auf 175°C vorheizen und Backform fetten.",
+      "Butter und Zucker schaumig rühren.",
+      "Eier einzeln unterrühren.",
+      "Mehl, Kakao und Backpulver mischen.",
+      "Mehlmischung abwechselnd mit Milch unterrühren.",
+      "Teig in die Form füllen und glatt streichen.",
+      "35-40 Minuten backen.",
+      "Abkühlen lassen und nach Wunsch glasieren."
+    ]
+  }
 ]);
+
+const currentRecipeIndex = ref(0);
+const selectedRecipe = ref<typeof recipes.value[0] | null>(null);
+
+// Ingredients list - will be populated from selected recipe
+const ingredients = ref<Array<{name: string, checked: boolean, detectClass: string | null}>>([]);
 
 // Detected objects
 const detectedObjects = ref<string[]>([]);
@@ -28,15 +116,11 @@ const recognitionSuccess = ref(false);
 // Thumb hold to confirm all ingredients
 const thumbHoldProgress = ref(0);
 
-// Mode: 'ingredients' or 'recipe'
-const mode = ref<'ingredients' | 'recipe'>('ingredients');
+// Mode: 'recipe-selection', 'ingredients' or 'recipe'
+const mode = ref<'recipe-selection' | 'ingredients' | 'recipe'>('recipe-selection');
 
-const steps = [
-  "Schritt 1: Zutaten vorbereiten.",
-  "Schritt 2: Pfanne erhitzen.",
-  "Schritt 3: Anbraten und würzen.",
-  "Schritt 4: 10 Minuten köcheln lassen."
-];
+// Steps - will be populated from selected recipe
+const steps = ref<string[]>([]);
 
 const step = ref(0);
 const toast = ref("");
@@ -65,12 +149,29 @@ function showToast(msg: string) {
 }
 
 function nextStep() {
-  step.value = Math.min(step.value + 1, steps.length - 1);
+  step.value = Math.min(step.value + 1, steps.value.length - 1);
   showToast("Weiter");
 }
 function prevStep() {
   step.value = Math.max(step.value - 1, 0);
   showToast("Zurück");
+}
+
+function selectRecipe(index: number) {
+  selectedRecipe.value = recipes.value[index];
+  ingredients.value = JSON.parse(JSON.stringify(selectedRecipe.value.ingredients));
+  steps.value = [...selectedRecipe.value.steps];
+  mode.value = 'ingredients';
+  step.value = 0;
+  showToast(`${selectedRecipe.value.title} ausgewählt!`);
+}
+
+function nextRecipe() {
+  currentRecipeIndex.value = Math.min(currentRecipeIndex.value + 1, recipes.value.length - 1);
+}
+
+function prevRecipe() {
+  currentRecipeIndex.value = Math.max(currentRecipeIndex.value - 1, 0);
 }
 function toggleTimer(force?: boolean) {
   timerOpen.value = force ?? !timerOpen.value;
@@ -186,6 +287,24 @@ let vision: Awaited<ReturnType<typeof initVision>> | null = null;
 let objectDetectionModel: any = null;
 
 function handleGesture(ev: GestureEvent) {
+  // Recipe selection mode - thumbs up to select, swipes to navigate
+  if (mode.value === 'recipe-selection') {
+    if (ev.type === "THUMBS_UP_PROGRESS") {
+      thumbHoldProgress.value = ev.progress;
+    }
+    if (ev.type === "THUMBS_UP_HOLD") {
+      selectRecipe(currentRecipeIndex.value);
+      thumbHoldProgress.value = 0;
+    }
+    if (ev.type === "PINCH_FLICK_LEFT") {
+      prevRecipe();
+    }
+    if (ev.type === "PINCH_FLICK_RIGHT") {
+      nextRecipe();
+    }
+    return; // Don't handle other gestures in recipe-selection mode
+  }
+  
   // Ingredients mode - check items with thumbs up or auto-detect
   if (mode.value === 'ingredients') {
     if (ev.type === "THUMBS_UP_PROGRESS") {
@@ -345,420 +464,471 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="layout">
-    <div class="left">
-      <!-- Ingredients Mode -->
-      <div v-if="mode === 'ingredients'">
-        <h1>Zutaten Check</h1>
-          <p class="subtitle">Halte jede Zutat ins Bild - sie wird automatisch erkannt!</p>
-        
-          <!-- Detection feedback -->
-          <div v-if="detectedObjects.length > 0" class="detectionFeedback">
-            🔍 Erkannt: {{ detectedObjects.join(', ') }}
-          </div>
-        
-        <div class="ingredientsList">
-          <div 
-            v-for="(ingredient, idx) in ingredients" 
-            :key="idx"
-            class="ingredientItem"
-            :class="{ checked: ingredient.checked }"
-          >
-            <div class="checkbox">
-              <span v-if="ingredient.checked" class="checkmark">✓</span>
-            </div>
-            <span class="ingredientName">{{ ingredient.name }}</span>
-          </div>
-        </div>
-        
-        <div class="ingredientsHint">
-           Die Kamera erkennt automatisch: Äpfel, Bananen, Orangen, Karotten, Flaschen<br>
-           Alternativ: 👍 Daumen hoch zum manuellen Abhaken
-        </div>
-      </div>
+  <!-- Fullscreen container -->
+  <div class="app-container">
+    <!-- Recipe Selection Screen -->
+    <RecipeSelection 
+      v-if="mode === 'recipe-selection'"
+      :recipes="recipes"
+      :current-recipe-index="currentRecipeIndex"
+      :thumb-progress="thumbHoldProgress"
+      @select-recipe="selectRecipe"
+      @next-recipe="nextRecipe"
+      @prev-recipe="prevRecipe"
+    />
+    
+    <!-- Ingredient Scanner -->
+    <IngredientScanner 
+      v-else-if="mode === 'ingredients'"
+      :ingredients="ingredients"
+      :detected-objects="detectedObjects"
+      :recognition-hint="recognitionHint"
+      :recognition-success="recognitionSuccess"
+    />
+    
+    <!-- Recipe Steps View -->
+    <RecipeView 
+      v-else
+      :steps="steps"
+      :step="step"
+      :timer-open="timerOpen"
+      @prev="prevStep"
+      @next="nextStep"
+      @toggle-timer="toggleTimer"
+    />
+
+    <!-- Hidden video and canvas for gesture detection -->
+    <div class="gesture-capture">
+      <video ref="videoRef" autoplay playsinline muted></video>
+      <canvas ref="canvasRef"></canvas>
       
-      <!-- Recipe Mode -->
-      <div v-else>
-        <h1>Rezept</h1>
-        <div class="step">
-          <div>Schritt {{ step + 1 }}/{{ steps.length }}</div>
-          <div class="stepText">
-            {{ steps[step] }}
-          </div>
-        </div>
-
-        <div class="controls">
-          <button @click="prevStep">Zurück</button>
-          <button @click="nextStep">Weiter</button>
-          <button @click="toggleTimer()">Timer</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="right">
-      <div class="videoWrap">
-        <video ref="videoRef" autoplay playsinline muted></video>
-        <canvas ref="canvasRef"></canvas>
-        
-        <!-- Palm progress indicator -->
-        <div v-if="palmProgress > 0" class="palmProgress">
-          <svg class="palmProgressRing" width="80" height="80">
-            <circle 
-              cx="40" cy="40" r="32" 
-              fill="none" stroke="#374151" stroke-width="6"
-            />
-            <circle 
-              cx="40" cy="40" r="32" 
-              fill="none" stroke="#4ade80" stroke-width="6"
-              stroke-linecap="round"
-              :stroke-dasharray="`${palmProgress * 201} 201`"
-              transform="rotate(-90 40 40)"
-              class="palmProgressFill"
-            />
-          </svg>
-          <div class="palmProgressText">{{ Math.round(palmProgress * 100) }}%</div>
-          <div class="palmProgressLabel">{{ timerOpen ? 'Timer abbrechen' : 'Timer aufrufen' }}</div>
-        </div>
-        
-        <!-- Recognition hint overlay (ingredients mode) -->
-        <div v-if="mode === 'ingredients' && recognitionHint" 
-             class="recognitionHint" 
-             :class="{ success: recognitionSuccess, pending: !recognitionSuccess }">
-          <span class="hintIcon">{{ recognitionSuccess ? '✅' : '👀' }}</span>
-          <span class="hintText">{{ recognitionHint }}</span>
-        </div>
-
-        <!-- Thumbs-up hold progress (ingredients mode) -->
-        <div v-if="mode === 'ingredients' && thumbHoldProgress > 0" class="thumbHold">
-          <svg width="90" height="90">
-            <circle cx="45" cy="45" r="34" fill="none" stroke="#374151" stroke-width="6" />
-            <circle 
-              cx="45" cy="45" r="34" fill="none" stroke="#60a5fa" stroke-width="6" stroke-linecap="round"
-              :stroke-dasharray="`${thumbHoldProgress * 213} 213`" transform="rotate(-90 45 45)"
-            />
-          </svg>
-          <div class="thumbHoldText">Daumen halten: {{ Math.round(thumbHoldProgress * 100) }}%</div>
-        </div>
-
-        <!-- Pinch swipe indicator -->
-        <div v-if="Math.abs(pinchSwipeDeltaX) > 0.005 || Math.abs(pinchSwipeDeltaY) > 0.005" class="pinchSwipeIndicator">
-          <svg width="200" height="200" viewBox="0 0 200 200">
-            <!-- Glow effect -->
-            <defs>
-              <filter id="glow">
-                <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-                <feMerge>
-                  <feMergeNode in="coloredBlur"/>
-                  <feMergeNode in="SourceGraphic"/>
-                </feMerge>
-              </filter>
-            </defs>
-            
-            <!-- Direction line -->
-            <line 
-              x1="100" y1="100" 
-              :x2="100 + pinchSwipeDeltaX * 500" 
-              :y2="100 + pinchSwipeDeltaY * 500"
-              stroke="#60a5fa" 
-              stroke-width="6" 
-              stroke-linecap="round"
-              filter="url(#glow)"
-            />
-            
-            <!-- End point -->
-            <circle 
-              :cx="100 + pinchSwipeDeltaX * 500" 
-              :cy="100 + pinchSwipeDeltaY * 500"
-              r="12" 
-              fill="#60a5fa"
-              filter="url(#glow)"
-            />
-            
-            <!-- Start point -->
-            <circle cx="100" cy="100" r="8" fill="#60a5fa" opacity="0.6" />
-          </svg>
-          
-          <!-- Direction arrow with text -->
-          <div class="pinchSwipeLabel">
-            <div class="pinchSwipeArrow">
-              {{ Math.abs(pinchSwipeDeltaX) > Math.abs(pinchSwipeDeltaY) 
-                 ? (pinchSwipeDeltaX > 0 ? '→' : '←')
-                 : (pinchSwipeDeltaY > 0 ? '↓' : '↑') }}
-            </div>
-            <div class="pinchSwipeText">
-              {{ Math.abs(pinchSwipeDeltaX) > Math.abs(pinchSwipeDeltaY) 
-                 ? (pinchSwipeDeltaX > 0 ? 'Weiter' : 'Zurück')
-                 : (pinchSwipeDeltaY > 0 ? 'Runter' : 'Hoch') }}
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="hint">
-        <span v-if="mode === 'ingredients'">
-           Halte Zutaten ins Bild zur automatischen Erkennung | 👍 Daumen zum manuellen Abhaken
-        </span>
-        <span v-else>
-          Greifen & Flick (←/→ Rezept), Offene Hand 3s (Timer ↔), Daumen hoch (Timer Start)
-        </span>
-      </div>
+      <GestureOverlays 
+        :mode="mode"
+        :timer-open="timerOpen"
+        :palm-progress="palmProgress"
+        :pinch-swipe-delta-x="pinchSwipeDeltaX"
+        :pinch-swipe-delta-y="pinchSwipeDeltaY"
+        :recognition-hint="recognitionHint"
+        :recognition-success="recognitionSuccess"
+        :thumb-hold-progress="thumbHoldProgress"
+      />
     </div>
 
     <div v-if="toast" class="toast">{{ toast }}</div>
 
-    <div v-if="timerOpen" class="timerOverlay">
-      <div class="timerCard">
-        <h2>Timer</h2>
-        <div class="timerLabel">{{ timerLabel }}</div>
-        
-        <div class="eggTimerContainer">
-          <div class="eggTimer">
-            <!-- Clock face -->
-            <div class="clockFace">
-              <!-- Hour markers -->
-              <div v-for="i in 12" :key="i" class="hourMarker" :style="{ transform: `rotate(${i * 30}deg)` }">
-                <div class="marker"></div>
-              </div>
-              
-              <!-- Clock hand -->
-              <div class="clockHand" :style="{ transform: `rotate(${timerAngle * 180 / Math.PI}deg)` }">
-                <div class="handLine"></div>
-                <div class="handTip"></div>
-              </div>
-              
-              <!-- Center dot -->
-              <div class="centerDot"></div>
+    <!-- Timer Gesture Menu -->
+    <div v-if="timerOpen" class="timer-gesture-menu">
+      <div class="timer-menu-card">
+        <div class="timer-menu-header">
+          <h2 class="timer-menu-title">Timer Steuerung</h2>
+          <p class="timer-menu-subtitle">Verwende Gesten zur Steuerung</p>
+        </div>
+
+        <!-- Current Timer Display -->
+        <div class="timer-display-box">
+          <div class="timer-display-content">
+            <div class="timer-icon-wrapper">
+              <svg class="timer-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
             </div>
-            
-            <!-- Time display -->
-            <div class="timeDisplay">
-              {{ timerValues[0] > 0 ? `${timerValues[0]}h ` : '' }}{{ timerValues[1] > 0 ? `${timerValues[1]}m` : '' }}
-            </div>
-            
-            <div class="clockInstructions">
-              Mit Zeigefinger zeigen oder mit Pinch greifen & verschieben
-            </div>
+            <div class="timer-time-display">{{ timerLabel }}</div>
+            <div class="timer-status-text">{{ timer.isRunning ? 'Läuft' : timer.isPaused ? 'Pausiert' : 'Bereit' }}</div>
           </div>
         </div>
 
-        <div class="timerRow">
-          <button @click="timer.addSeconds(-30)">-30s</button>
-          <button @click="timer.addSeconds(30)">+30s</button>
+        <!-- Gesture Controls Grid -->
+        <div class="gesture-controls-grid">
+          <!-- Start Timer (Thumbs Up) -->
+          <button @click="startTimerWithCustomTime()" :disabled="timer.isRunning" class="gesture-control-btn" :class="{ 'btn-disabled': timer.isRunning }">
+            <div class="gesture-icon-circle green">
+              <svg class="gesture-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
+              </svg>
+            </div>
+            <div class="gesture-label">Timer starten</div>
+            <div class="gesture-hint">👍 Daumen hoch</div>
+          </button>
+
+          <!-- Pause Timer (Peace) -->
+          <button @click="timer.pause()" :disabled="!timer.isRunning" class="gesture-control-btn" :class="{ 'btn-disabled': !timer.isRunning }">
+            <div class="gesture-icon-circle blue">
+              <svg class="gesture-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div class="gesture-label">Pausieren</div>
+            <div class="gesture-hint">✌️ Peace Zeichen</div>
+          </button>
+
+          <!-- Stop Timer (Fist) -->
+          <button @click="timer.stop()" :disabled="!timer.isRunning && !timer.isPaused" class="gesture-control-btn" :class="{ 'btn-disabled': !timer.isRunning && !timer.isPaused }">
+            <div class="gesture-icon-circle red">
+              <svg class="gesture-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10h6v4H9z" />
+              </svg>
+            </div>
+            <div class="gesture-label">Stoppen</div>
+            <div class="gesture-hint">✊ Faust</div>
+          </button>
+
+          <!-- Close Menu (Open Hand) -->
+          <button @click="toggleTimer(false)" class="gesture-control-btn">
+            <div class="gesture-icon-circle amber">
+              <svg class="gesture-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </div>
+            <div class="gesture-label">Schließen</div>
+            <div class="gesture-hint">✋ Offene Hand</div>
+          </button>
         </div>
 
-        <div class="timerRow">
-          <button @click="startTimerWithCustomTime()">Start</button>
-          <button @click="timer.pause()">Pause</button>
-          <button @click="timer.stop()">Stop</button>
+        <!-- Quick Time Adjust -->
+        <div class="quick-time-adjust">
+          <button @click="timer.addSeconds(-30)" class="time-adjust-btn">
+            <span class="time-adjust-text">-30s</span>
+          </button>
+          <button @click="timer.addSeconds(30)" class="time-adjust-btn">
+            <span class="time-adjust-text">+30s</span>
+          </button>
+          <button @click="timer.addSeconds(60)" class="time-adjust-btn">
+            <span class="time-adjust-text">+1min</span>
+          </button>
         </div>
 
-        <div class="timerRow">
-          <button @click="toggleTimer(false)">Schließen</button>
+        <!-- Help Text -->
+        <div class="timer-help-text">
+          💡 Halte die Geste 3-5 Sekunden
         </div>
+      </div>
+    </div>
+
+    <!-- Timer Finished Notification -->
+    <div v-if="timerLabel === '00:00' && timer.hasFinished" class="timer-finished-overlay">
+      <div class="timer-finished-card">
+        <div class="timer-finished-icon">
+          <svg class="finished-icon-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h2 class="timer-finished-title">Zeit abgelaufen!</h2>
+        <p class="timer-finished-text">Dein Timer ist fertig</p>
+        <button @click="timer.stop(); timer.hasFinished = false" class="timer-finished-btn">
+          Okay
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.layout { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px; }
-.left, .right { background: #151822; border-radius: 14px; padding: 16px; color: #e8e8e8; }
-.step { background: #0f1220; padding: 14px; border-radius: 12px; min-height: 160px; }
-.stepText { margin-top: 10px; }
-.controls { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-button { background: #2a2f45; border: 0; color: #fff; padding: 10px 12px; border-radius: 10px; cursor: pointer; }
-.videoWrap { position: relative; width: 100%; aspect-ratio: 4/3; background: #000; border-radius: 12px; overflow: hidden; }
-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; }
-canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.hint { margin-top: 10px; opacity: .8; font-size: 14px; }
-.zoom { margin-top: 10px; opacity: .9; }
-.toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: #1f2440; padding: 10px 14px; border-radius: 999px; }
-.timerOverlay { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,0.55); }
-.timerCard { width: min(420px, 92vw); background: #151822; padding: 16px; border-radius: 14px; }
-.timerRow { display: flex; gap: 10px; margin-top: 10px; justify-content: center; }
-.timerLabel { font-size: 44px; text-align: center; }
-
-.eggTimerContainer { display: flex; justify-content: center; margin: 20px 0; }
-.eggTimer { text-align: center; }
-
-.clockFace { 
-  position: relative; width: 200px; height: 200px; 
-  border: 4px solid #4ade80; border-radius: 50%; 
-  background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
-  margin: 0 auto;
+.app-container {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
 }
 
-.hourMarker { 
-  position: absolute; top: 10px; left: 50%; width: 2px; height: 20px;
-  transform-origin: 50% 90px; background: #6b7280;
-}
-.marker { width: 100%; height: 100%; background: #6b7280; }
-
-.clockHand { 
-  position: absolute; top: 50%; left: 50%; transform-origin: 0 0;
-  pointer-events: none; transition: transform 0.1s ease;
-}
-.handLine { 
-  width: 80px; height: 3px; background: #4ade80;
-  transform: translateY(-1.5px);
-}
-.handTip { 
-  position: absolute; right: -6px; top: -4.5px;
-  width: 12px; height: 12px; border-radius: 50%;
-  background: #4ade80;
+.gesture-capture {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  width: 240px;
+  height: 180px;
+  border-radius: 1rem;
+  overflow: hidden;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  z-index: 50;
+  border: 2px solid rgba(255, 255, 255, 0.2);
 }
 
-.centerDot { 
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  width: 12px; height: 12px; border-radius: 50%; background: #4ade80;
-  z-index: 2;
+video, canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-.timeDisplay { 
-  margin-top: 15px; font-size: 18px; font-weight: bold; color: #4ade80;
-  min-height: 22px;
+video {
+  opacity: 0.3;
 }
 
-.clockInstructions { 
-  margin-top: 10px; font-size: 12px; opacity: 0.7;
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 2rem;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: 9999px;
+  font-weight: 500;
+  z-index: 100;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
 }
 
-.palmProgress { position: absolute; top: 20px; right: 20px; width: 120px; height: 100px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.palmProgressRing { position: relative; }
-.palmProgressFill { transition: stroke-dasharray 0.1s ease; }
-.palmProgressText { 
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  color: #4ade80; font-size: 14px; font-weight: bold; z-index: 1;
-}
-.palmProgressLabel { 
-  margin-top: 8px; color: #e8e8e8; font-size: 12px; text-align: center; 
-  background: rgba(0,0,0,0.7); padding: 4px 8px; border-radius: 6px;
-}
-
-.pinchSwipeIndicator { 
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  pointer-events: none; z-index: 10;
-}
-.pinchSwipeLabel {
-  margin-top: 15px; display: flex; flex-direction: column; align-items: center; gap: 8px;
-}
-.pinchSwipeArrow {
-  color: #60a5fa; font-size: 48px; font-weight: bold;
-  text-shadow: 0 0 20px rgba(96, 165, 250, 0.8), 0 0 40px rgba(96, 165, 250, 0.4);
-  background: rgba(0,0,0,0.85); padding: 12px 24px; border-radius: 12px;
-  border: 2px solid #60a5fa;
-  animation: pulse 0.8s ease-in-out infinite;
-}
-.pinchSwipeText {
-  color: #60a5fa; font-size: 16px; font-weight: bold;
-  background: rgba(0,0,0,0.85); padding: 6px 16px; border-radius: 8px;
-  border: 1px solid #60a5fa;
+/* Timer Gesture Menu */
+.timer-gesture-menu {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
 }
 
-@keyframes pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.1); }
+.timer-menu-card {
+  background: white;
+  border-radius: 1.5rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  padding: 2rem;
+  max-width: 42rem;
+  width: calc(100% - 4rem);
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
-.subtitle {
-  opacity: 0.8; font-size: 14px; margin-top: -8px; margin-bottom: 16px;
+.timer-menu-header {
+  text-align: center;
+  margin-bottom: 1.5rem;
 }
 
-.ingredientsList {
-  display: flex; flex-direction: column; gap: 12px;
-  background: #0f1220; padding: 16px; border-radius: 12px;
-}
-
-.ingredientItem {
-  display: flex; align-items: center; gap: 12px;
-  padding: 12px; border-radius: 8px;
-  background: #1a1f35;
-  transition: all 0.3s ease;
-}
-
-.ingredientItem.checked {
-  background: #1a3a2a;
-  border-left: 4px solid #4ade80;
-}
-
-.checkbox {
-  width: 28px; height: 28px; border-radius: 6px;
-  border: 2px solid #4a5568;
-  display: flex; align-items: center; justify-content: center;
-  transition: all 0.3s ease;
-}
-
-.ingredientItem.checked .checkbox {
-  background: #4ade80;
-  border-color: #4ade80;
-}
-
-.checkmark {
-  color: #fff; font-size: 20px; font-weight: bold;
-  animation: checkPop 0.3s ease;
-}
-
-@keyframes checkPop {
-  0% { transform: scale(0); }
-  50% { transform: scale(1.2); }
-  100% { transform: scale(1); }
-}
-
-.ingredientName {
-  font-size: 16px;
-  transition: all 0.3s ease;
-}
-
-.ingredientItem.checked .ingredientName {
-  color: #4ade80;
-  text-decoration: line-through;
-  opacity: 0.7;
-}
-
-.ingredientsHint {
-  margin-top: 16px;
-  padding: 12px;
-  background: rgba(96, 165, 250, 0.1);
-  border: 1px solid rgba(96, 165, 250, 0.3);
-  border-radius: 8px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: #60a5fa;
-}
-
-.recognitionHint {
-  position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 16px; border-radius: 999px; backdrop-filter: blur(6px);
-  font-size: 14px; font-weight: 600;
-  border: 2px solid;
-}
-.recognitionHint.pending { 
-  background: rgba(234, 179, 8, 0.15); border-color: #f59e0b; color: #fbbf24;
-}
-.recognitionHint.success { 
-  background: rgba(74, 222, 128, 0.15); border-color: #22c55e; color: #4ade80;
-}
-.recognitionHint .hintIcon { font-size: 16px; }
-.recognitionHint .hintText { letter-spacing: 0.2px; }
-
-.thumbHold {
-  position: absolute; top: 20px; left: 20px; display: flex; align-items: center; gap: 10px;
-  background: rgba(96, 165, 250, 0.12); border: 1px solid rgba(96, 165, 250, 0.4);
-  padding: 8px 12px; border-radius: 10px;
-}
-.thumbHoldText { color: #60a5fa; font-weight: 600; }
-
-.detectionFeedback {
-  margin-top: 12px;
-  padding: 10px 14px;
-  background: linear-gradient(135deg, rgba(74, 222, 128, 0.15) 0%, rgba(34, 197, 94, 0.1) 100%);
-  border: 2px solid #4ade80;
-  border-radius: 8px;
-  font-size: 14px;
+.timer-menu-title {
+  font-size: 1.875rem;
   font-weight: bold;
-  color: #4ade80;
-  animation: pulse 1.5s ease-in-out infinite;
+  color: #1e293b;
+  margin-bottom: 0.5rem;
+}
+
+.timer-menu-subtitle {
+  color: #64748b;
+}
+
+.timer-display-box {
+  background: linear-gradient(to bottom right, #fff7ed, #fed7aa);
+  border-radius: 1rem;
+  padding: 2rem;
+  margin-bottom: 1.5rem;
+}
+
+.timer-display-content {
   text-align: center;
 }
+
+.timer-icon-wrapper {
+  width: 4rem;
+  height: 4rem;
+  background: #f97316;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1rem;
+}
+
+.timer-icon {
+  width: 2rem;
+  height: 2rem;
+  color: white;
+}
+
+.timer-time-display {
+  font-size: 3rem;
+  font-weight: bold;
+  color: #1e293b;
+  margin-bottom: 0.5rem;
+}
+
+.timer-status-text {
+  color: #78350f;
+  font-weight: 500;
+}
+
+.gesture-controls-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.gesture-control-btn {
+  background: white;
+  border: 2px solid #e2e8f0;
+  border-radius: 1rem;
+  padding: 1.5rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.gesture-control-btn:hover:not(.btn-disabled) {
+  border-color: #f97316;
+  transform: scale(1.02);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.gesture-control-btn:active:not(.btn-disabled) {
+  transform: scale(0.98);
+}
+
+.btn-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.gesture-icon-circle {
+  width: 4rem;
+  height: 4rem;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 0.75rem;
+}
+
+.gesture-icon-circle.green {
+  background: linear-gradient(to bottom right, #4ade80, #22c55e);
+}
+
+.gesture-icon-circle.blue {
+  background: linear-gradient(to bottom right, #60a5fa, #3b82f6);
+}
+
+.gesture-icon-circle.red {
+  background: linear-gradient(to bottom right, #f87171, #ef4444);
+}
+
+.gesture-icon-circle.amber {
+  background: linear-gradient(to bottom right, #fbbf24, #f59e0b);
+}
+
+.gesture-svg {
+  width: 2rem;
+  height: 2rem;
+  color: white;
+  stroke-width: 2.5;
+}
+
+.gesture-label {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 0.25rem;
+}
+
+.gesture-hint {
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+.quick-time-adjust {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+}
+
+.time-adjust-btn {
+  background: #f1f5f9;
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.time-adjust-btn:hover {
+  background: #e2e8f0;
+  transform: scale(1.05);
+}
+
+.time-adjust-text {
+  font-size: 0.875rem;
+}
+
+.timer-help-text {
+  text-align: center;
+  font-size: 0.875rem;
+  color: #64748b;
+}
+
+/* Timer Finished Notification */
+.timer-finished-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 60;
+}
+
+.timer-finished-card {
+  background: white;
+  border-radius: 1.5rem;
+  padding: 3rem;
+  text-align: center;
+  animation: bounce 1s infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.timer-finished-icon {
+  width: 6rem;
+  height: 6rem;
+  background: #22c55e;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.5rem;
+}
+
+.finished-icon-svg {
+  width: 3rem;
+  height: 3rem;
+  color: white;
+}
+
+.timer-finished-title {
+  font-size: 2.25rem;
+  font-weight: bold;
+  color: #1e293b;
+  margin-bottom: 1rem;
+}
+
+.timer-finished-text {
+  font-size: 1.25rem;
+  color: #64748b;
+  margin-bottom: 1.5rem;
+}
+
+.timer-finished-btn {
+  background: linear-gradient(to right, #22c55e, #10b981);
+  color: white;
+  padding: 1rem 2rem;
+  border-radius: 9999px;
+  font-size: 1.125rem;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.timer-finished-btn:hover {
+  transform: scale(1.05);
+}
+
+
 </style>

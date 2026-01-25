@@ -1,11 +1,21 @@
 export class TimerController {
   private seconds = 0;
   private running = false;
+  private paused = false;
   private last = 0;
   private raf: number | null = null;
+  public hasFinished = false;
 
   constructor(private onUpdate: (s: string) => void) {
     this.emit();
+  }
+
+  get isRunning() {
+    return this.running;
+  }
+
+  get isPaused() {
+    return this.paused;
   }
 
   addSeconds(d: number) {
@@ -15,24 +25,32 @@ export class TimerController {
 
   setTime(totalSeconds: number) {
     this.seconds = totalSeconds;
+    this.hasFinished = false;
     this.emit();
   }
 
   start() {
     if (this.running) return;
     this.running = true;
+    this.paused = false;
+    this.hasFinished = false;
     this.last = performance.now();
     this.loop();
   }
 
   pause() {
+    if (!this.running) return;
     this.running = false;
+    this.paused = true;
     if (this.raf) cancelAnimationFrame(this.raf);
   }
 
   stop() {
-    this.pause();
+    this.running = false;
+    this.paused = false;
+    if (this.raf) cancelAnimationFrame(this.raf);
     this.seconds = 0;
+    this.hasFinished = false;
     this.emit();
   }
 
@@ -44,7 +62,10 @@ export class TimerController {
 
     if (this.seconds > 0) {
       this.seconds = Math.max(0, this.seconds - dt);
-      if (this.seconds === 0) alert("Timer fertig!");
+      if (this.seconds === 0) {
+        this.running = false;
+        this.hasFinished = true;
+      }
     }
     this.emit();
     this.raf = requestAnimationFrame(this.loop);
