@@ -22,6 +22,10 @@ const timerLabel = ref("00:00");
 // Open palm progress tracking
 const palmProgress = ref(0);
 
+// Pinch swipe progress tracking
+const pinchSwipeDeltaX = ref(0);
+const pinchSwipeDeltaY = ref(0);
+
 // Timer unit selection
 const timerUnits = ['Sekunden', 'Minuten', 'Stunden'];
 const currentUnit = ref(0); // 0=Sekunden, 1=Minuten, 2=Stunden
@@ -159,6 +163,10 @@ function handleGesture(ev: GestureEvent) {
   if (ev.type === "OPEN_PALM_PROGRESS") {
     palmProgress.value = ev.progress;
   }
+  if (ev.type === "PINCH_SWIPE_PROGRESS") {
+    pinchSwipeDeltaX.value = ev.deltaX;
+    pinchSwipeDeltaY.value = ev.deltaY;
+  }
   if (ev.type === "THUMBS_UP") {
     startTimerWithCustomTime();
     showToast("Timer Start");
@@ -225,6 +233,59 @@ onBeforeUnmount(() => {
           </svg>
           <div class="palmProgressText">{{ Math.round(palmProgress * 100) }}%</div>
           <div class="palmProgressLabel">{{ timerOpen ? 'Timer abbrechen' : 'Timer aufrufen' }}</div>
+        </div>
+        
+        <!-- Pinch swipe indicator -->
+        <div v-if="Math.abs(pinchSwipeDeltaX) > 0.005 || Math.abs(pinchSwipeDeltaY) > 0.005" class="pinchSwipeIndicator">
+          <svg width="200" height="200" viewBox="0 0 200 200">
+            <!-- Glow effect -->
+            <defs>
+              <filter id="glow">
+                <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                <feMerge>
+                  <feMergeNode in="coloredBlur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+            </defs>
+            
+            <!-- Direction line -->
+            <line 
+              x1="100" y1="100" 
+              :x2="100 + pinchSwipeDeltaX * 500" 
+              :y2="100 + pinchSwipeDeltaY * 500"
+              stroke="#60a5fa" 
+              stroke-width="6" 
+              stroke-linecap="round"
+              filter="url(#glow)"
+            />
+            
+            <!-- End point -->
+            <circle 
+              :cx="100 + pinchSwipeDeltaX * 500" 
+              :cy="100 + pinchSwipeDeltaY * 500"
+              r="12" 
+              fill="#60a5fa"
+              filter="url(#glow)"
+            />
+            
+            <!-- Start point -->
+            <circle cx="100" cy="100" r="8" fill="#60a5fa" opacity="0.6" />
+          </svg>
+          
+          <!-- Direction arrow with text -->
+          <div class="pinchSwipeLabel">
+            <div class="pinchSwipeArrow">
+              {{ Math.abs(pinchSwipeDeltaX) > Math.abs(pinchSwipeDeltaY) 
+                 ? (pinchSwipeDeltaX > 0 ? '→' : '←')
+                 : (pinchSwipeDeltaY > 0 ? '↓' : '↑') }}
+            </div>
+            <div class="pinchSwipeText">
+              {{ Math.abs(pinchSwipeDeltaX) > Math.abs(pinchSwipeDeltaY) 
+                 ? (pinchSwipeDeltaX > 0 ? 'Weiter' : 'Zurück')
+                 : (pinchSwipeDeltaY > 0 ? 'Runter' : 'Hoch') }}
+            </div>
+          </div>
         </div>
       </div>
       <div class="hint">
@@ -296,7 +357,8 @@ onBeforeUnmount(() => {
 .controls { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 button { background: #2a2f45; border: 0; color: #fff; padding: 10px 12px; border-radius: 10px; cursor: pointer; }
 .videoWrap { position: relative; width: 100%; aspect-ratio: 4/3; background: #000; border-radius: 12px; overflow: hidden; }
-video, canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .hint { margin-top: 10px; opacity: .8; font-size: 14px; }
 .zoom { margin-top: 10px; opacity: .9; }
 .toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: #1f2440; padding: 10px 14px; border-radius: 999px; }
@@ -360,5 +422,31 @@ video, canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-
 .palmProgressLabel { 
   margin-top: 8px; color: #e8e8e8; font-size: 12px; text-align: center; 
   background: rgba(0,0,0,0.7); padding: 4px 8px; border-radius: 6px;
+}
+
+.pinchSwipeIndicator { 
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  pointer-events: none; z-index: 10;
+}
+.pinchSwipeLabel {
+  margin-top: 15px; display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.pinchSwipeArrow {
+  color: #60a5fa; font-size: 48px; font-weight: bold;
+  text-shadow: 0 0 20px rgba(96, 165, 250, 0.8), 0 0 40px rgba(96, 165, 250, 0.4);
+  background: rgba(0,0,0,0.85); padding: 12px 24px; border-radius: 12px;
+  border: 2px solid #60a5fa;
+  animation: pulse 0.8s ease-in-out infinite;
+}
+.pinchSwipeText {
+  color: #60a5fa; font-size: 16px; font-weight: bold;
+  background: rgba(0,0,0,0.85); padding: 6px 16px; border-radius: 8px;
+  border: 1px solid #60a5fa;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
 }
 </style>
