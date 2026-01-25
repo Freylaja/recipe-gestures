@@ -3,9 +3,33 @@ import { onMounted, onBeforeUnmount, ref } from "vue";
 import { initVision } from "./vision";
 import { GestureEngine, type GestureEvent } from "./gestures";
 import { TimerController } from "./timer";
+import { loadObjectDetectionModel, detectObjects } from "./objectDetection";
 
 const videoRef = ref<HTMLVideoElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
+
+// Ingredients list - based on recipe, only some are auto-detectable
+const ingredients = ref([
+  { name: "Äpfel", checked: false, detectClass: "apple" },
+  { name: "Mehl", checked: false, detectClass: null },
+  { name: "Zucker", checked: false, detectClass: null },
+  { name: "Eier", checked: false, detectClass: null },
+  { name: "Öl", checked: false, detectClass: "bottle" },
+  { name: "Backpulver", checked: false, detectClass: null },
+  { name: "Zimt", checked: false, detectClass: null },
+  { name: "Puderzucker", checked: false, detectClass: null }
+]);
+
+// Detected objects
+const detectedObjects = ref<string[]>([]);
+// Visual detection hint
+const recognitionHint = ref("");
+const recognitionSuccess = ref(false);
+// Thumb hold to confirm all ingredients
+const thumbHoldProgress = ref(0);
+
+// Mode: 'ingredients' or 'recipe'
+const mode = ref<'ingredients' | 'recipe'>('ingredients');
 
 const steps = [
   "Schritt 1: Zutaten vorbereiten.",
@@ -50,6 +74,40 @@ function prevStep() {
 }
 function toggleTimer(force?: boolean) {
   timerOpen.value = force ?? !timerOpen.value;
+}
+
+function checkNextIngredient() {
+  const uncheckedIndex = ingredients.value.findIndex(ing => !ing.checked);
+  if (uncheckedIndex !== -1) {
+    ingredients.value[uncheckedIndex].checked = true;
+    showToast(`✓ ${ingredients.value[uncheckedIndex].name}`);
+    
+    // Check if all ingredients are checked
+    if (ingredients.value.every(ing => ing.checked)) {
+      setTimeout(() => {
+        mode.value = 'recipe';
+        showToast("Alle Zutaten da! Los geht's!");
+      }, 800);
+    }
+  }
+}
+
+function uncheckLastIngredient() {
+  const checkedIndex = ingredients.value.findIndex(ing => ing.checked);
+  if (checkedIndex !== -1) {
+    // Find last checked
+    let lastChecked = -1;
+    for (let i = ingredients.value.length - 1; i >= 0; i--) {
+      if (ingredients.value[i].checked) {
+        lastChecked = i;
+        break;
+      }
+    }
+    if (lastChecked !== -1) {
+      ingredients.value[lastChecked].checked = false;
+      showToast(`✗ ${ingredients.value[lastChecked].name}`);
+    }
+  }
 }
 
 function adjustTimerValue(direction: number) {
@@ -123,9 +181,29 @@ const timer = new TimerController((label) => (timerLabel.value = label));
 const engine = new GestureEngine();
 
 let raf = 0;
+let objectDetectionRaf = 0;
 let vision: Awaited<ReturnType<typeof initVision>> | null = null;
+let objectDetectionModel: any = null;
 
 function handleGesture(ev: GestureEvent) {
+  // Ingredients mode - check items with thumbs up or auto-detect
+  if (mode.value === 'ingredients') {
+    if (ev.type === "THUMBS_UP_PROGRESS") {
+      thumbHoldProgress.value = ev.progress;
+    }
+    if (ev.type === "THUMBS_UP_HOLD") {
+      // Confirm all ingredients present
+      ingredients.value = ingredients.value.map(i => ({ ...i, checked: true }));
+      showToast("Alle Zutaten bestätigt!");
+      setTimeout(() => { mode.value = 'recipe'; }, 800);
+    }
+    if (ev.type === "PINCH_FLICK_LEFT") {
+      uncheckLastIngredient();
+    }
+    return; // Don't handle other gestures in ingredients mode
+  }
+  
+  // Recipe mode
   // Handle pinch-flick for recipe navigation (only when timer closed)
   if (!timerOpen.value) {
     if (ev.type === "PINCH_FLICK_LEFT") prevStep();
@@ -173,8 +251,78 @@ function handleGesture(ev: GestureEvent) {
   }
 }
 
+// Object detection loop
+async function detectObjectsLoop() {
+  if (mode.value !== 'ingredients' || !videoRef.value) {
+    recognitionHint.value = "";
+    recognitionSuccess.value = false;
+    objectDetectionRaf = requestAnimationFrame(detectObjectsLoop);
+    return;
+  }
+
+  try {
+    const objects = await detectObjects(videoRef.value);
+    const detected = objects
+      .filter(obj => obj.score > 0.5)
+      .map(obj => obj.class);
+    
+    detectedObjects.value = detected;
+    
+    // Determine current (first unchecked) ingredient
+    const currentIndex = ingredients.value.findIndex(ing => !ing.checked);
+    const currentIngredient = currentIndex !== -1 ? ingredients.value[currentIndex] : null;
+    
+    if (currentIngredient) {
+      const detectClass = (currentIngredient as any).detectClass;
+      const isDetected = !!detectClass && detected.includes(detectClass);
+      recognitionSuccess.value = isDetected;
+      if (isDetected) {
+        recognitionHint.value = `${currentIngredient.name} erkannt!`;
+      } else {
+        recognitionHint.value = detectClass
+          ? `${currentIngredient.name} noch nicht erkannt, Ausrichtung ändern`
+          : `${currentIngredient.name} wird nicht automatisch erkannt – 👍 Daumen 3s halten zum Bestätigen`;
+      }
+    } else {
+      recognitionHint.value = "";
+      recognitionSuccess.value = false;
+    }
+    
+    // Auto-check ingredients based on detected objects
+    for (const ingredient of ingredients.value) {
+      if (!ingredient.checked && ingredient.detectClass && detected.includes(ingredient.detectClass)) {
+        ingredient.checked = true;
+        showToast(`✓ ${ingredient.name} erkannt!`);
+        recognitionHint.value = `${ingredient.name} erkannt!`;
+        recognitionSuccess.value = true;
+        
+        // Check if all ingredients are now checked
+        if (ingredients.value.every(ing => ing.checked)) {
+          setTimeout(() => {
+            mode.value = 'recipe';
+            showToast("Alle Zutaten da! Los geht's!");
+          }, 1000);
+        }
+        
+        // Wait a bit before checking next to avoid duplicates
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
+    }
+  } catch (error) {
+    console.error('Object detection error:', error);
+  }
+
+  objectDetectionRaf = requestAnimationFrame(detectObjectsLoop);
+}
+
 onMounted(async () => {
   if (!videoRef.value || !canvasRef.value) return;
+  
+  // Load object detection model
+  console.log('Loading object detection model...');
+  objectDetectionModel = await loadObjectDetectionModel();
+  console.log('Object detection ready!');
+  
   vision = await initVision(videoRef.value, canvasRef.value);
 
   const loop = async () => {
@@ -184,10 +332,14 @@ onMounted(async () => {
     raf = requestAnimationFrame(loop);
   };
   raf = requestAnimationFrame(loop);
+  
+    // Start object detection loop
+    objectDetectionRaf = requestAnimationFrame(detectObjectsLoop);
 });
 
 onBeforeUnmount(() => {
   cancelAnimationFrame(raf);
+    cancelAnimationFrame(objectDetectionRaf);
   vision?.stop();
 });
 </script>
@@ -195,18 +347,51 @@ onBeforeUnmount(() => {
 <template>
   <div class="layout">
     <div class="left">
-      <h1>Rezept</h1>
-      <div class="step">
-        <div>Schritt {{ step + 1 }}/{{ steps.length }}</div>
-        <div class="stepText">
-          {{ steps[step] }}
+      <!-- Ingredients Mode -->
+      <div v-if="mode === 'ingredients'">
+        <h1>Zutaten Check</h1>
+          <p class="subtitle">Halte jede Zutat ins Bild - sie wird automatisch erkannt!</p>
+        
+          <!-- Detection feedback -->
+          <div v-if="detectedObjects.length > 0" class="detectionFeedback">
+            🔍 Erkannt: {{ detectedObjects.join(', ') }}
+          </div>
+        
+        <div class="ingredientsList">
+          <div 
+            v-for="(ingredient, idx) in ingredients" 
+            :key="idx"
+            class="ingredientItem"
+            :class="{ checked: ingredient.checked }"
+          >
+            <div class="checkbox">
+              <span v-if="ingredient.checked" class="checkmark">✓</span>
+            </div>
+            <span class="ingredientName">{{ ingredient.name }}</span>
+          </div>
+        </div>
+        
+        <div class="ingredientsHint">
+           Die Kamera erkennt automatisch: Äpfel, Bananen, Orangen, Karotten, Flaschen<br>
+           Alternativ: 👍 Daumen hoch zum manuellen Abhaken
         </div>
       </div>
+      
+      <!-- Recipe Mode -->
+      <div v-else>
+        <h1>Rezept</h1>
+        <div class="step">
+          <div>Schritt {{ step + 1 }}/{{ steps.length }}</div>
+          <div class="stepText">
+            {{ steps[step] }}
+          </div>
+        </div>
 
-      <div class="controls">
-        <button @click="prevStep">Zurück</button>
-        <button @click="nextStep">Weiter</button>
-        <button @click="toggleTimer()">Timer</button>
+        <div class="controls">
+          <button @click="prevStep">Zurück</button>
+          <button @click="nextStep">Weiter</button>
+          <button @click="toggleTimer()">Timer</button>
+        </div>
       </div>
     </div>
 
@@ -235,6 +420,26 @@ onBeforeUnmount(() => {
           <div class="palmProgressLabel">{{ timerOpen ? 'Timer abbrechen' : 'Timer aufrufen' }}</div>
         </div>
         
+        <!-- Recognition hint overlay (ingredients mode) -->
+        <div v-if="mode === 'ingredients' && recognitionHint" 
+             class="recognitionHint" 
+             :class="{ success: recognitionSuccess, pending: !recognitionSuccess }">
+          <span class="hintIcon">{{ recognitionSuccess ? '✅' : '👀' }}</span>
+          <span class="hintText">{{ recognitionHint }}</span>
+        </div>
+
+        <!-- Thumbs-up hold progress (ingredients mode) -->
+        <div v-if="mode === 'ingredients' && thumbHoldProgress > 0" class="thumbHold">
+          <svg width="90" height="90">
+            <circle cx="45" cy="45" r="34" fill="none" stroke="#374151" stroke-width="6" />
+            <circle 
+              cx="45" cy="45" r="34" fill="none" stroke="#60a5fa" stroke-width="6" stroke-linecap="round"
+              :stroke-dasharray="`${thumbHoldProgress * 213} 213`" transform="rotate(-90 45 45)"
+            />
+          </svg>
+          <div class="thumbHoldText">Daumen halten: {{ Math.round(thumbHoldProgress * 100) }}%</div>
+        </div>
+
         <!-- Pinch swipe indicator -->
         <div v-if="Math.abs(pinchSwipeDeltaX) > 0.005 || Math.abs(pinchSwipeDeltaY) > 0.005" class="pinchSwipeIndicator">
           <svg width="200" height="200" viewBox="0 0 200 200">
@@ -289,7 +494,12 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="hint">
-        Gesten: Greifen & Flick (←/→ Rezept), Offene Hand 3s (Timer ↔), Daumen hoch (Timer Start)
+        <span v-if="mode === 'ingredients'">
+           Halte Zutaten ins Bild zur automatischen Erkennung | 👍 Daumen zum manuellen Abhaken
+        </span>
+        <span v-else>
+          Greifen & Flick (←/→ Rezept), Offene Hand 3s (Timer ↔), Daumen hoch (Timer Start)
+        </span>
       </div>
     </div>
 
@@ -448,5 +658,107 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: co
 @keyframes pulse {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.1); }
+}
+
+.subtitle {
+  opacity: 0.8; font-size: 14px; margin-top: -8px; margin-bottom: 16px;
+}
+
+.ingredientsList {
+  display: flex; flex-direction: column; gap: 12px;
+  background: #0f1220; padding: 16px; border-radius: 12px;
+}
+
+.ingredientItem {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px; border-radius: 8px;
+  background: #1a1f35;
+  transition: all 0.3s ease;
+}
+
+.ingredientItem.checked {
+  background: #1a3a2a;
+  border-left: 4px solid #4ade80;
+}
+
+.checkbox {
+  width: 28px; height: 28px; border-radius: 6px;
+  border: 2px solid #4a5568;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.3s ease;
+}
+
+.ingredientItem.checked .checkbox {
+  background: #4ade80;
+  border-color: #4ade80;
+}
+
+.checkmark {
+  color: #fff; font-size: 20px; font-weight: bold;
+  animation: checkPop 0.3s ease;
+}
+
+@keyframes checkPop {
+  0% { transform: scale(0); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+.ingredientName {
+  font-size: 16px;
+  transition: all 0.3s ease;
+}
+
+.ingredientItem.checked .ingredientName {
+  color: #4ade80;
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.ingredientsHint {
+  margin-top: 16px;
+  padding: 12px;
+  background: rgba(96, 165, 250, 0.1);
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #60a5fa;
+}
+
+.recognitionHint {
+  position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; border-radius: 999px; backdrop-filter: blur(6px);
+  font-size: 14px; font-weight: 600;
+  border: 2px solid;
+}
+.recognitionHint.pending { 
+  background: rgba(234, 179, 8, 0.15); border-color: #f59e0b; color: #fbbf24;
+}
+.recognitionHint.success { 
+  background: rgba(74, 222, 128, 0.15); border-color: #22c55e; color: #4ade80;
+}
+.recognitionHint .hintIcon { font-size: 16px; }
+.recognitionHint .hintText { letter-spacing: 0.2px; }
+
+.thumbHold {
+  position: absolute; top: 20px; left: 20px; display: flex; align-items: center; gap: 10px;
+  background: rgba(96, 165, 250, 0.12); border: 1px solid rgba(96, 165, 250, 0.4);
+  padding: 8px 12px; border-radius: 10px;
+}
+.thumbHoldText { color: #60a5fa; font-weight: 600; }
+
+.detectionFeedback {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, rgba(74, 222, 128, 0.15) 0%, rgba(34, 197, 94, 0.1) 100%);
+  border: 2px solid #4ade80;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: bold;
+  color: #4ade80;
+  animation: pulse 1.5s ease-in-out infinite;
+  text-align: center;
 }
 </style>

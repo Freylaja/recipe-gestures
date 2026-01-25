@@ -11,6 +11,8 @@ export type GestureEvent =
   | { type: "POINT_CLOCK"; angle: number }
   | { type: "OPEN_PALM" }
   | { type: "OPEN_PALM_PROGRESS"; progress: number }
+  | { type: "THUMBS_UP_PROGRESS"; progress: number }
+  | { type: "THUMBS_UP_HOLD" }
   | { type: "PINCH_SWIPE_PROGRESS"; deltaX: number; deltaY: number }
   | { type: "THUMBS_UP" };
 
@@ -45,6 +47,10 @@ export class GestureEngine {
   private openPalmStartTime: number | null = null;
   private openPalmTriggered = false;
   private openPalmDelayPassed = false;
+
+  // Thumbs-up hold tracking
+  private thumbsUpStartTime: number | null = null;
+  private thumbsUpTriggered = false;
 
   update(
     result: HandLandmarkerResult | null,
@@ -114,10 +120,31 @@ export class GestureEngine {
         emit({ type: "OPEN_PALM_PROGRESS", progress: 0 });
       }
       
+      // Thumbs-up with hold progress
       if (isThumbsUp(lm)) {
-        emit({ type: "THUMBS_UP" });
-        this.poseCooldown = t + 900;
-        return;
+        if (this.thumbsUpStartTime === null) {
+          this.thumbsUpStartTime = t;
+          // Also emit immediate thumbs-up once for quick actions
+          emit({ type: "THUMBS_UP" });
+        }
+        const holdDuration = t - this.thumbsUpStartTime;
+        const requiredDuration = 3000; // 3 seconds
+        if (holdDuration < requiredDuration && !this.thumbsUpTriggered) {
+          const progress = holdDuration / requiredDuration;
+          emit({ type: "THUMBS_UP_PROGRESS", progress });
+        }
+        if (holdDuration >= requiredDuration && !this.thumbsUpTriggered) {
+          emit({ type: "THUMBS_UP_HOLD" });
+          this.thumbsUpTriggered = true;
+          this.poseCooldown = t + 900;
+        }
+      } else {
+        // Reset thumbs-up tracking when pose changes
+        if (this.thumbsUpStartTime !== null) {
+          emit({ type: "THUMBS_UP_PROGRESS", progress: 0 });
+        }
+        this.thumbsUpStartTime = null;
+        this.thumbsUpTriggered = false;
       }
     }
     
