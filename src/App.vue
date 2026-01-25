@@ -22,6 +22,7 @@ const recipes = ref([
     servings: 8,
     difficulty: 'Mittel',
     category: 'Kuchen',
+    image: '/applepie.png',
     ingredients: [
       { name: "Äpfel", checked: false, detectClass: "apple" },
       { name: "Mehl", checked: false, detectClass: null },
@@ -54,6 +55,7 @@ const recipes = ref([
     servings: 4,
     difficulty: 'Einfach',
     category: 'Pasta',
+    image: '/spaghetti.jpg',
     ingredients: [
       { name: "Spaghetti", checked: false, detectClass: null },
       { name: "Eier", checked: false, detectClass: null },
@@ -80,6 +82,7 @@ const recipes = ref([
     servings: 12,
     difficulty: 'Einfach',
     category: 'Kuchen',
+    image: '/schokokuchen.jpg',
     ingredients: [
       { name: "Mehl", checked: false, detectClass: null },
       { name: "Kakao", checked: false, detectClass: null },
