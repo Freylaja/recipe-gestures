@@ -102,7 +102,28 @@ const recipes = ref([
       "35-40 Minuten backen.",
       "Abkühlen lassen und nach Wunsch glasieren."
     ]
-  }
+  },
+  {
+id: '4', 
+title: 'Obstsalat',
+prepTime: '15 Minuten',
+servings: 4,
+difficulty: 'Einfach',
+category: 'Salat',
+image: '/Obstsalat.png',
+ingredients: [
+{ name: "Orange", checked: false, detectClass: null },
+{ name: "Apfel", checked: false, detectClass: null },
+{ name: "Banane", checked: false, detectClass: null }
+],
+steps: [
+"Den Apfel waschen, entkernen und in Würfel schneiden",
+"Die Orange schälen und in mundgerechte Stücke teilen",
+"Die Banane schälen und in Scheiben schneiden",
+"Alles zusammen in eine Schüssel geben und gleichmäßig vermengen",
+"Pur servieren"
+]
+},
 ]);
 
 const currentRecipeIndex = ref(0);
