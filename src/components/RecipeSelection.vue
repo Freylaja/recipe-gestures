@@ -105,7 +105,7 @@ const isSelecting = computed(() => props.thumbProgress > 0)
                 {{ isSelecting ? 'Halte die Geste...' : 'Daumen hoch zum Auswählen' }}
               </p>
               <p v-if="isSelecting" class="selection-sub-text">
-                {{ Math.ceil((100 - props.thumbProgress) / 33.33) }} Sekunden
+                Progress: {{ (props.thumbProgress * 100).toFixed(1) }}%
               </p>
             </div>
 
@@ -121,7 +121,10 @@ const isSelecting = computed(() => props.thumbProgress > 0)
             <!-- Progress Bar -->
             <div class="progress-bar-container">
               <div class="progress-bar-bg">
-                <div class="progress-bar-fill" :style="{ width: `${props.thumbProgress}%` }" />
+                <div 
+                  class="progress-bar-fill" 
+                  :style="{ width: (props.thumbProgress * 100) + '%' }" 
+                />
               </div>
             </div>
           </div>
@@ -174,7 +177,7 @@ const isSelecting = computed(() => props.thumbProgress > 0)
           </div>
           <div>
             <div class="help-label">Navigieren</div>
-            <div class="help-action">Wischen oder Pfeile</div>
+            <div class="help-action">🤏 Pinch & Wischen oder Pfeile</div>
           </div>
         </div>
 
@@ -380,11 +383,13 @@ const isSelecting = computed(() => props.thumbProgress > 0)
   font-size: 1.125rem;
   color: #64748b;
   margin-bottom: 0.5rem;
+  transition: all 0.3s;
 }
 
 .selection-sub-text {
   font-size: 0.875rem;
   color: #94a3b8;
+  transition: all 0.3s;
 }
 
 .thumbs-button-wrapper {
@@ -417,6 +422,19 @@ const isSelecting = computed(() => props.thumbProgress > 0)
 .thumbs-selecting {
   background: linear-gradient(to bottom right, #22c55e, #16a34a);
   transform: scale(1.1);
+  animation: button-pulse 0.6s ease-in-out infinite;
+  box-shadow: 0 0 40px rgba(34, 197, 94, 0.6);
+}
+
+@keyframes button-pulse {
+  0%, 100% {
+    transform: scale(1.1);
+    box-shadow: 0 0 40px rgba(34, 197, 94, 0.6);
+  }
+  50% {
+    transform: scale(1.15);
+    box-shadow: 0 0 50px rgba(34, 197, 94, 0.8);
+  }
 }
 
 .thumbs-icon {
@@ -433,6 +451,7 @@ const isSelecting = computed(() => props.thumbProgress > 0)
   background: #e2e8f0;
   border-radius: 9999px;
   overflow: hidden;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .progress-bar-bg {
@@ -448,6 +467,22 @@ const isSelecting = computed(() => props.thumbProgress > 0)
   background: linear-gradient(to right, #22c55e, #10b981);
   border-radius: 9999px;
   transition: width 0.1s linear;
+  height: 100%;
+}
+
+/* Animation nur wenn thumbProgress > 0 */
+.thumbs-selecting ~ .progress-bar-container .progress-bar-fill {
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.5);
+  animation: glow-pulse 1s ease-in-out infinite;
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(34, 197, 94, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(34, 197, 94, 0.9), 0 0 40px rgba(34, 197, 94, 0.6);
+  }
 }
 
 .nav-arrow {
