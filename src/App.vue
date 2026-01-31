@@ -170,11 +170,11 @@ function selectRecipe(index: number) {
 }
 
 function nextRecipe() {
-  currentRecipeIndex.value = Math.min(currentRecipeIndex.value + 1, recipes.value.length - 1);
+  currentRecipeIndex.value = (currentRecipeIndex.value + 1) % recipes.value.length;
 }
 
 function prevRecipe() {
-  currentRecipeIndex.value = Math.max(currentRecipeIndex.value - 1, 0);
+  currentRecipeIndex.value = (currentRecipeIndex.value - 1 + recipes.value.length) % recipes.value.length;
 }
 function toggleTimer(force?: boolean) {
   timerOpen.value = force ?? !timerOpen.value;
