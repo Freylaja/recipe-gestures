@@ -112,9 +112,9 @@ difficulty: 'Einfach',
 category: 'Salat',
 image: '/Obstsalat.png',
 ingredients: [
-{ name: "Orange", checked: false, detectClass: null },
-{ name: "Apfel", checked: false, detectClass: null },
-{ name: "Banane", checked: false, detectClass: null }
+{ name: "Orange", checked: false, detectClass: "orange" },
+{ name: "Apfel", checked: false, detectClass: "apple" },
+{ name: "Banane", checked: false, detectClass: "banana" }
 ],
 steps: [
 "Den Apfel waschen, entkernen und in Würfel schneiden",
