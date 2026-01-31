@@ -104,9 +104,7 @@ const isSelecting = computed(() => props.thumbProgress > 0)
               <p class="selection-main-text">
                 {{ isSelecting ? 'Halte die Geste...' : 'Daumen hoch zum Auswählen' }}
               </p>
-              <p v-if="isSelecting" class="selection-sub-text">
-                Progress: {{ (props.thumbProgress * 100).toFixed(1) }}%
-              </p>
+              
             </div>
 
             <!-- Thumbs Up Button -->
