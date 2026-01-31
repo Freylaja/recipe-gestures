@@ -290,6 +290,18 @@ let vision: Awaited<ReturnType<typeof initVision>> | null = null;
 let objectDetectionModel: any = null;
 
 function handleGesture(ev: GestureEvent) {
+  // Handle pinch swipe progress globally (for visual feedback)
+  if (ev.type === "PINCH_SWIPE_PROGRESS") {
+    pinchSwipeDeltaX.value = ev.deltaX;
+    pinchSwipeDeltaY.value = ev.deltaY;
+  }
+  // Reset pinch swipe deltas when flick completes
+  if (ev.type === "PINCH_FLICK_LEFT" || ev.type === "PINCH_FLICK_RIGHT" || 
+      ev.type === "PINCH_FLICK_UP" || ev.type === "PINCH_FLICK_DOWN") {
+    pinchSwipeDeltaX.value = 0;
+    pinchSwipeDeltaY.value = 0;
+  }
+
   // Recipe selection mode - thumbs up to select, swipes to navigate
   if (mode.value === 'recipe-selection') {
     if (ev.type === "THUMBS_UP_PROGRESS") {
@@ -362,10 +374,6 @@ function handleGesture(ev: GestureEvent) {
   }
   if (ev.type === "OPEN_PALM_PROGRESS") {
     palmProgress.value = ev.progress;
-  }
-  if (ev.type === "PINCH_SWIPE_PROGRESS") {
-    pinchSwipeDeltaX.value = ev.deltaX;
-    pinchSwipeDeltaY.value = ev.deltaY;
   }
   if (ev.type === "THUMBS_UP") {
     startTimerWithCustomTime();
@@ -657,7 +665,7 @@ onBeforeUnmount(() => {
   width: 240px;
   height: 180px;
   border-radius: 1rem;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
   z-index: 50;
   border: 2px solid rgba(255, 255, 255, 0.2);
