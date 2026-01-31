@@ -247,9 +247,12 @@ const currentIngredient = computed(() => props.ingredients.find(i => !i.checked)
 
 .ingredients-panel {
   position: absolute;
-  top: 2rem;
-  right: 2rem;
-  width: 384px;
+  top: 1rem;
+  right: 1rem;
+  bottom: 1rem;
+  width: 400px;
+  display: flex;
+  flex-direction: column;
 }
 
 .panel-card {
@@ -258,11 +261,15 @@ const currentIngredient = computed(() => props.ingredients.find(i => !i.checked)
   border-radius: 1.5rem;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
 }
 
 .panel-header {
   background: linear-gradient(to right, #f97316, #f59e0b);
-  padding: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  flex-shrink: 0;
 }
 
 .panel-title {
@@ -306,12 +313,33 @@ const currentIngredient = computed(() => props.ingredients.find(i => !i.checked)
 }
 
 .ingredients-list {
-  padding: 1.5rem;
-  max-height: 600px;
+  padding: 1rem 1.5rem 1.5rem 1.5rem;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Scrollbar styling */
+.ingredients-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.ingredients-list::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 10px;
+  margin: 8px 0;
+}
+
+.ingredients-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+}
+
+.ingredients-list::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .ingredient-card {

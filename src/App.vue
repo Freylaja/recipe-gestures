@@ -16,7 +16,60 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
 // Recipes list
 const recipes = ref([
   {
-    id: '1',
+id: '1' ,
+title: 'Vegane Apfelmuffins', 
+prepTime: '45 Minuten',
+servings: 12,
+difficulty: 'Einfach',
+category: 'Muffins',
+image: '/Apfelmuffins.png',
+ingredients: [
+{ name: "Apfel", checked: false, detectClass: "apple" },
+{ name: "Mehl", checked: false, detectClass: null },
+{ name: "Backpulver", checked: false, detectClass: null },
+{ name: "brauner Zucker", checked: false, detectClass: null },
+{ name: "Zimt", checked: false, detectClass: null },
+{ name: "Salz", checked: false, detectClass: null },
+{ name: "Apfelmus", checked: false, detectClass: null },
+{ name: "geschmacksneutrales Öl", checked: false, detectClass: "bottle" },
+{ name: "Pflanzlicher Drink", checked: false, detectClass: null },
+],
+steps: [
+"Backofen auf 190 Grad Ober- und Unterhitze vorheizen",
+"Äpfel waschen, halbieren und das Gehäuse entfernen. Anschließend in kleine Würfel schneiden. Optional: Eine der Hälften für die Dekoration der Muffins in feine Scheiben schneiden.",
+"Mehl, Backpulver, brauner Zucker, Zimt und Salz in eine große Schüssel geben und miteinander vermengen.",
+"Apfelmus, Öl und Pflanzendrink dazugeben und mit dem Schneebesen oder Kuchenspatel zu einem klümpchenfreien Teig verrühren. Nicht länger als nötig rühren, da der Teig sonst beim Backen zu fest wird und nicht aufgeht.",
+"Eine Handvoll Apfelstücke aufheben. Die restlichen Apfelstücke unter den Teig heben.",
+"Ein Muffinblech mit Papierförmchen auslegen. Den Teig gleichmäßig auf die Mulden verteilen.",
+"Die übrigen Apfelwürfel auf die Muffins legen und mit einer Prise Zimt bestreuen.",
+"Auf der mittleren Schiene 25 Minuten goldbraun backen. Sie sind fertig, sobald an einem Holzstäbchen, dass du in die Mitte des Teiges steckst, nur noch ganz vereinzelt Krümel hängen bleiben.",
+"Apfelmuffins aus dem Ofen nehmen, aus dem Blech lösen und abkühlen lassen. Luftdicht verpackt und kühl gelagert bleiben sie 2-3 Tage lecker saftig! Lass es dir schmecken!"
+
+]
+},
+    {
+id: '2', 
+title: 'Obstsalat',
+prepTime: '15 Minuten',
+servings: 4,
+difficulty: 'Einfach',
+category: 'Salat',
+image: '/Obstsalat.png',
+ingredients: [
+{ name: "Orange", checked: false, detectClass: "orange" },
+{ name: "Apfel", checked: false, detectClass: "apple" },
+{ name: "Banane", checked: false, detectClass: "banana" }
+],
+steps: [
+"Den Apfel waschen, entkernen und in Würfel schneiden",
+"Die Orange schälen und in mundgerechte Stücke teilen",
+"Die Banane schälen und in Scheiben schneiden",
+"Alles zusammen in eine Schüssel geben und gleichmäßig vermengen",
+"Pur servieren"
+]
+},
+  {
+    id: '3',
     title: 'Apfelkuchen',
     prepTime: '60-70 Min.',
     servings: 8,
@@ -49,7 +102,7 @@ const recipes = ref([
     ]
   },
   {
-    id: '2',
+    id: '4',
     title: 'Spaghetti Carbonara',
     prepTime: '25 Min.',
     servings: 4,
@@ -76,7 +129,7 @@ const recipes = ref([
     ]
   },
   {
-    id: '3',
+    id: '5',
     title: 'Schokoladenkuchen',
     prepTime: '50 Min.',
     servings: 12,
@@ -102,28 +155,8 @@ const recipes = ref([
       "35-40 Minuten backen.",
       "Abkühlen lassen und nach Wunsch glasieren."
     ]
-  },
-  {
-id: '4', 
-title: 'Obstsalat',
-prepTime: '15 Minuten',
-servings: 4,
-difficulty: 'Einfach',
-category: 'Salat',
-image: '/Obstsalat.png',
-ingredients: [
-{ name: "Orange", checked: false, detectClass: "orange" },
-{ name: "Apfel", checked: false, detectClass: "apple" },
-{ name: "Banane", checked: false, detectClass: "banana" }
-],
-steps: [
-"Den Apfel waschen, entkernen und in Würfel schneiden",
-"Die Orange schälen und in mundgerechte Stücke teilen",
-"Die Banane schälen und in Scheiben schneiden",
-"Alles zusammen in eine Schüssel geben und gleichmäßig vermengen",
-"Pur servieren"
-]
-},
+  }
+
 ]);
 
 const currentRecipeIndex = ref(0);
@@ -413,13 +446,42 @@ async function detectObjectsLoop() {
 
   try {
     const objects = await detectObjects(videoRef.value);
+    
+    // Debug: Log all detected objects with scores
+    if (objects.length > 0) {
+      console.log('Detected objects:', objects.map(o => `${o.class} (${(o.score * 100).toFixed(1)}%)`));
+    }
+    
     const detected = objects
-      .filter(obj => obj.score > 0.5)
+      .filter(obj => obj.score > 0.4) // Lowered from 0.5 to 0.4 for better orange detection
       .map(obj => obj.class);
     
     detectedObjects.value = detected;
     
-    // Determine current (first unchecked) ingredient
+    // Auto-check ingredients based on detected objects FIRST
+    for (const ingredient of ingredients.value) {
+      if (!ingredient.checked && ingredient.detectClass && detected.includes(ingredient.detectClass)) {
+        ingredient.checked = true;
+        showToast(`✓ ${ingredient.name} erkannt!`);
+        
+        // Check if all ingredients are now checked
+        if (ingredients.value.every(ing => ing.checked)) {
+          setTimeout(() => {
+            mode.value = 'recipe';
+            showToast("Alle Zutaten da! Los geht's!");
+          }, 1000);
+          return; // Exit early if all done
+        }
+        
+        // Only check ONE ingredient per detection loop
+        break;
+      }
+    }
+    
+    // Wait a bit before next detection to avoid duplicates
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    // AFTER auto-checking, determine current (first unchecked) ingredient for hint
     const currentIndex = ingredients.value.findIndex(ing => !ing.checked);
     const currentIngredient = currentIndex !== -1 ? ingredients.value[currentIndex] : null;
     
@@ -431,33 +493,12 @@ async function detectObjectsLoop() {
         recognitionHint.value = `${currentIngredient.name} erkannt!`;
       } else {
         recognitionHint.value = detectClass
-          ? `${currentIngredient.name} noch nicht erkannt, Ausrichtung ändern`
+          ? `Zutat noch nicht erkannt, Ausrichtung ändern`
           : `${currentIngredient.name} wird nicht automatisch erkannt – 👍 Daumen 3s halten zum Bestätigen`;
       }
     } else {
       recognitionHint.value = "";
       recognitionSuccess.value = false;
-    }
-    
-    // Auto-check ingredients based on detected objects
-    for (const ingredient of ingredients.value) {
-      if (!ingredient.checked && ingredient.detectClass && detected.includes(ingredient.detectClass)) {
-        ingredient.checked = true;
-        showToast(`✓ ${ingredient.name} erkannt!`);
-        recognitionHint.value = `${ingredient.name} erkannt!`;
-        recognitionSuccess.value = true;
-        
-        // Check if all ingredients are now checked
-        if (ingredients.value.every(ing => ing.checked)) {
-          setTimeout(() => {
-            mode.value = 'recipe';
-            showToast("Alle Zutaten da! Los geht's!");
-          }, 1000);
-        }
-        
-        // Wait a bit before checking next to avoid duplicates
-        await new Promise(resolve => setTimeout(resolve, 1500));
-      }
     }
   } catch (error) {
     console.error('Object detection error:', error);
@@ -530,7 +571,7 @@ onBeforeUnmount(() => {
     />
 
     <!-- Hidden video and canvas for gesture detection -->
-    <div class="gesture-capture">
+    <div class="gesture-capture" :class="{ 'centered': mode === 'ingredients' }">
        <video 
       ref="videoRef" 
       class="video-feed" 
@@ -690,6 +731,19 @@ onBeforeUnmount(() => {
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
   z-index: 50;
   border: 2px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+.gesture-capture.centered {
+  top: 50%;
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  transform: translate(-50%, -50%);
+  width: 400px;
+  height: 300px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.3);
 }
 
 video, canvas {
