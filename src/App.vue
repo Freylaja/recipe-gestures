@@ -502,8 +502,16 @@ onBeforeUnmount(() => {
 
     <!-- Hidden video and canvas for gesture detection -->
     <div class="gesture-capture">
-      <video ref="videoRef" autoplay playsinline muted></video>
-      <canvas ref="canvasRef"></canvas>
+       <video 
+      ref="videoRef" 
+      class="video-feed" 
+      autoplay 
+      playsinline 
+    />
+    <canvas 
+      ref="canvasRef" 
+      class="canvas-overlay" 
+    />
       
       <GestureOverlays 
         :mode="mode"
@@ -627,6 +635,15 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.video-feed {
+
+  transform: scaleX(-1); /* Horizontale Spiegelung */
+}
+
+.canvas-overlay {
+
+  transform: scaleX(-1); /* Canvas auch spiegeln */
+}
 .app-container {
   position: fixed;
   inset: 0;

@@ -286,10 +286,23 @@ function isPointing(lm: NormalizedLandmark[]) {
 }
 
 function isThumbsUp(lm: NormalizedLandmark[]) {
-  const w = lm[0];
-  const thumbUp = dist(lm[4], w) > dist(lm[2], w) * 1.2;
-  const othersFolded = [8, 12, 16, 20].every(
-    i => dist(lm[i], w) < dist(lm[i - 3], w) * 1.05
-  );
-  return thumbUp && othersFolded;
+  const wrist = lm[0];
+  const thumbTip = lm[4];
+  const thumbMcp = lm[2]; // Thumb base
+  
+  // Daumen muss ausgestreckt sein
+  const thumbExtended = dist(thumbTip, wrist) > dist(thumbMcp, wrist) * 1.1;
+  
+  // Prüfe ob andere Finger eingeklappt sind
+  // Vergleiche Fingerspitzen mit ihren mittleren Gelenken (nicht Basis)
+  const indexFolded = dist(lm[8], wrist) < dist(lm[6], wrist);
+  const middleFolded = dist(lm[12], wrist) < dist(lm[10], wrist);
+  const ringFolded = dist(lm[16], wrist) < dist(lm[14], wrist);
+  const pinkyFolded = dist(lm[20], wrist) < dist(lm[18], wrist);
+  
+  // Zähle eingeklappte Finger
+  const foldedCount = [indexFolded, middleFolded, ringFolded, pinkyFolded].filter(Boolean).length;
+  
+  // Mindestens 3 von 4 Fingern müssen eingeklappt sein
+  return thumbExtended && foldedCount >= 3;
 }
