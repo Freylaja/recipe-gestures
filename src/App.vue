@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, watch } from "vue";
+import { onMounted, onBeforeUnmount, ref, watch, computed } from "vue";
 import { initVision } from "./vision";
 import { GestureEngine, type GestureEvent } from "./gestures";
 import { TimerController, MultiTimerManager, type RunningTimer } from "./timer";
@@ -189,6 +189,9 @@ const timerLabel = ref("00:00");
 // Active timers for overlay
 const activeTimers = ref<RunningTimer[]>([]);
 
+// Computed: Check if any timers are running (not finished)
+const hasRunningTimers = computed(() => activeTimers.value.some(t => !t.hasFinished));
+
 // Detected timer from current step
 const detectedTimerSeconds = ref<number | null>(null);
 const showTimerConfirmation = ref(false);
@@ -204,8 +207,8 @@ const palmProgress = ref(0);
 const pinchSwipeDeltaX = ref(0);
 const pinchSwipeDeltaY = ref(0);
 
-// Manual timer slider (minutes)
-const manualTimerMinutes = ref(5);
+// Timer add minutes slider
+const addTimerMinutes = ref(5);
 const timerSliderPosition = ref(0.5); // 0.0 to 1.0 for smooth continuous position
 const pinchStartX = ref<number | null>(null);
 const pinchStartSliderPosition = ref<number | null>(null);
@@ -491,7 +494,7 @@ function handleGesture(ev: GestureEvent) {
     if (ev.type === "PINCH_FLICK_RIGHT") nextStep();
   }
   
-  // Handle timer menu (only when timer open)
+  // Handle timer menu slider (only when timer open)
   if (timerOpen.value) {
     // Track thumbs up progress for visual feedback
     if (ev.type === "THUMBS_UP_PROGRESS") {
@@ -520,7 +523,7 @@ function handleGesture(ev: GestureEvent) {
         timerSliderPosition.value = Math.max(0, Math.min(1, newPosition));
         
         // Convert position to minutes for display
-        manualTimerMinutes.value = Math.round(1 + timerSliderPosition.value * 59);
+        addTimerMinutes.value = Math.round(1 + timerSliderPosition.value * 59);
       }
     }
     
@@ -530,24 +533,26 @@ function handleGesture(ev: GestureEvent) {
       pinchStartSliderPosition.value = null;
     }
     
-    // Start new timer with selected minutes (thumbs up for 3 seconds)
+    // Add minutes to all active timers with thumbs up (3 seconds)
     if (ev.type === "THUMBS_UP_HOLD") {
-      multiTimerManager.createTimer(manualTimerMinutes.value * 60, "Manual Timer");
-      showToast(`⏱️ Timer gestartet: ${manualTimerMinutes.value} Min`);
+      activeTimers.value.forEach(timer => {
+        timer.controller.addSeconds(addTimerMinutes.value * 60);
+      });
+      showToast(`⏱️ ${addTimerMinutes.value} Min zu allen Timern hinzugefügt`);
       thumbHoldProgress.value = 0;
       return;
     }
   }
   
   if (ev.type === "OPEN_PALM") {
-    // Close timer menu when open hand detected
-    if (timerOpen.value) {
-      toggleTimer(false);
-      palmProgress.value = 0;
-    }
-    // Or open timer menu if not already open (only allow manual timer when no auto-timer is waiting for confirmation)
-    else if (!showTimerConfirmation.value) {
-      toggleTimer();
+    // Only allow timer menu if timers are actually running (not finished) and no confirmation is pending
+    const hasRunningTimers = activeTimers.value.some(t => !t.hasFinished);
+    if (!showTimerConfirmation.value && hasRunningTimers) {
+      if (timerOpen.value) {
+        toggleTimer(false);
+      } else {
+        toggleTimer(true);
+      }
       palmProgress.value = 0;
     }
   }
@@ -764,22 +769,22 @@ onBeforeUnmount(() => {
         :recognition-success="recognitionSuccess"
         :thumb-hold-progress="thumbHoldProgress"
         :fist-progress="fistProgress"
+        :has-running-timers="hasRunningTimers"
       />
     </div>
 
     <div v-if="toast" class="toast">{{ toast }}</div>
 
-    <!-- Timer Gesture Menu -->
+    <!-- Timer Settings Menu - Shows active timers only -->
     <div v-if="timerOpen" class="timer-gesture-menu">
       <div class="timer-menu-card">
         <div class="timer-menu-header">
-          <h2 class="timer-menu-title">⏱️ Timer Steuerung</h2>
-          <p class="timer-menu-subtitle" v-if="activeTimers.length > 0">{{ activeTimers.length }} Timer aktiv</p>
-          <p class="timer-menu-subtitle" v-else>Keine Timer laufen</p>
+          <h2 class="timer-menu-title">⏱️ Timer Einstellungen</h2>
+          <p class="timer-menu-subtitle">{{ activeTimers.length }} Timer aktiv</p>
         </div>
 
         <!-- Active Timers List -->
-        <div v-if="activeTimers.length > 0" class="active-timers-list">
+        <div class="active-timers-list">
           <div v-for="t in activeTimers" :key="t.id" class="active-timer-item">
             <div class="timer-item-label">{{ t.label }}</div>
             <div class="timer-item-time">{{ t.remaining }}</div>
@@ -789,15 +794,15 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- Timer Duration Slider -->
+        <!-- Add Time Slider -->
         <div class="timer-slider-section">
           <div class="timer-slider-header">
-            <label class="timer-slider-label">Timer-Dauer einstellen</label>
-            <div class="timer-slider-value">{{ manualTimerMinutes }} Min</div>
+            <label class="timer-slider-label">Zeit hinzufügen</label>
+            <div class="timer-slider-value">{{ addTimerMinutes }} Min</div>
           </div>
           <input 
             type="range" 
-            v-model.number="manualTimerMinutes" 
+            v-model.number="addTimerMinutes" 
             min="1" 
             max="60" 
             step="1" 
@@ -812,18 +817,18 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- Gesture Controls Grid -->
+        <!-- Gesture Controls -->
         <div class="gesture-controls-grid-timer">
-          <!-- Start Timer (Thumbs Up) -->
+          <!-- Add Time (Thumbs Up) -->
           <div class="gesture-control-card">
             <div class="gesture-icon-circle green">
               <svg class="gesture-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
               </svg>
             </div>
-            <div class="gesture-label">Starten</div>
+            <div class="gesture-label">Zeit hinzufügen</div>
             <div class="gesture-hint">👍 Daumen hoch 3s</div>
-            <div class="gesture-detail">{{ manualTimerMinutes }} Minuten</div>
+            <div class="gesture-detail">{{ addTimerMinutes }} Min zu allen Timern</div>
           </div>
 
           <!-- Close Menu (Open Hand) -->
@@ -841,7 +846,7 @@ onBeforeUnmount(() => {
 
         <!-- Help Text -->
         <div class="timer-help-text">
-          🤏 Slider: Pinch & Slide | � Starten: Daumen 3s | ✋ Schließen: Hand 3s
+          🤏 Slider: Pinch & Slide | 👍 Zeit hinzufügen: Daumen 3s | ✋ Schließen: Hand 3s
         </div>
       </div>
     </div>

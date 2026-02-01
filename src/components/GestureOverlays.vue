@@ -11,6 +11,7 @@ const props = defineProps<{
   recognitionSuccess: boolean
   thumbHoldProgress: number
   fistProgress: number
+  hasRunningTimers: boolean
 }>()
 
 // Invert X because camera is mirrored (scaleX(-1))
@@ -18,13 +19,13 @@ const invertedDeltaX = computed(() => -props.pinchSwipeDeltaX)
 const invertedDeltaY = computed(() => props.pinchSwipeDeltaY)
 </script>
 <template>
-  <!-- Palm progress indicator -->
-  <div v-if="props.palmProgress > 0" class="palmProgress">
+  <!-- Palm progress indicator (only show in recipe mode when timers are running or menu is open) -->
+  <div v-if="props.mode === 'recipe' && props.palmProgress > 0 && (props.hasRunningTimers || props.timerOpen)" class="palmProgress">
     <svg width="90" height="90">
       <circle cx="45" cy="45" r="34" fill="none" stroke="#374151" stroke-width="6" />
       <circle cx="45" cy="45" r="34" fill="none" stroke="#4ade80" stroke-width="6" stroke-linecap="round" :stroke-dasharray="`${props.palmProgress * 213} 213`" transform="rotate(-90 45 45)" />
     </svg>
-    <div class="palmProgressText">✋ {{ props.timerOpen ? 'Timer abbrechen' : 'Timer aufrufen' }}: {{ Math.round(props.palmProgress * 100) }}%</div>
+    <div class="palmProgressText">✋ {{ props.timerOpen ? 'Menü schließen' : 'Timer aufrufen' }}: {{ Math.round(props.palmProgress * 100) }}%</div>
   </div>
 
   <!-- Recognition hint overlay (ingredients mode) -->

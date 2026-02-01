@@ -70,19 +70,6 @@ function formatTime(seconds: number): string {
               </div>
             </div>
           </div>
-
-          <!-- Old timer hint (only show if no timer was auto-detected) -->
-          <div v-else-if="stepText.toLowerCase().includes('min') || stepText.toLowerCase().includes('stunde')" class="timer-hint">
-            <div class="timer-hint-icon">
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div class="timer-hint-text">
-              <div class="hint-label">Timer Einstellungen</div>
-              <div class="hint-action">Offene Hand 3s halten zum Öffnen</div>
-            </div>
-          </div>
         </div>
 
         <!-- Navigation arrows -->
