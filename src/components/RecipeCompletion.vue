@@ -12,7 +12,7 @@ const emit = defineEmits<{
 
 const countdownSeconds = ref(3)
 const isVisible = ref(false)
-let countdownInterval: NodeJS.Timeout | null = null
+let countdownInterval: number | null = null
 
 onMounted(() => {
   isVisible.value = true
