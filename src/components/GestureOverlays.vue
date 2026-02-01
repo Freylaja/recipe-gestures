@@ -10,6 +10,7 @@ const props = defineProps<{
   recognitionHint: string
   recognitionSuccess: boolean
   thumbHoldProgress: number
+  thumbDownProgress: number
   fistProgress: number
   hasRunningTimers: boolean
 }>()
@@ -50,6 +51,15 @@ const invertedDeltaY = computed(() => props.pinchSwipeDeltaY)
       <circle cx="45" cy="45" r="34" fill="none" stroke="#ef4444" stroke-width="6" stroke-linecap="round" :stroke-dasharray="`${props.fistProgress * 213} 213`" transform="rotate(-90 45 45)" />
     </svg>
     <div class="fistText">✊ Rezept abbrechen: {{ Math.round(props.fistProgress * 100) }}%</div>
+  </div>
+
+  <!-- Thumbs-down hold progress (recipe mode - for canceling timers) -->
+  <div v-if="props.mode === 'recipe' && props.thumbDownProgress > 0" class="thumbDownProgress">
+    <svg width="90" height="90">
+      <circle cx="45" cy="45" r="34" fill="none" stroke="#374151" stroke-width="6" />
+      <circle cx="45" cy="45" r="34" fill="none" stroke="#f97316" stroke-width="6" stroke-linecap="round" :stroke-dasharray="`${props.thumbDownProgress * 213} 213`" transform="rotate(-90 45 45)" />
+    </svg>
+    <div class="thumbDownText">👎 Alle Timer abbrechen: {{ Math.round(props.thumbDownProgress * 100) }}%</div>
   </div>
 
   <!-- Pinch swipe indicator - visible on recipe-selection and recipe modes -->
@@ -103,7 +113,7 @@ const invertedDeltaY = computed(() => props.pinchSwipeDeltaY)
         {{ invertedDeltaX > 0 ? '→' : '←' }}
       </div>
       <div class="pinchSwipeText">
-        {{ invertedDeltaX > 0 ? 'Weiter' : 'Zurück' }}
+        {{ invertedDeltaX > 0 ? 'Zurück' : 'Weiter' }}
       </div>
     </div>
   </div>
@@ -158,6 +168,32 @@ const invertedDeltaY = computed(() => props.pinchSwipeDeltaY)
 
 .fistText {
   color: #fee2e2;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.thumbDownProgress {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.85);
+  padding: 12px 16px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
+  border: 2px solid #f97316;
+}
+
+.thumbDownProgress svg {
+  margin-bottom: 8px;
+}
+
+.thumbDownText {
+  color: #fed7aa;
   font-size: 14px;
   font-weight: 600;
   text-align: center;

@@ -11,6 +11,8 @@ export type GestureEvent =
   | { type: "OPEN_PALM_PROGRESS"; progress: number }
   | { type: "THUMBS_UP_PROGRESS"; progress: number }
   | { type: "THUMBS_UP_HOLD" }
+  | { type: "THUMBS_DOWN_PROGRESS"; progress: number }
+  | { type: "THUMBS_DOWN_HOLD" }
   | { type: "PINCH_SWIPE_PROGRESS"; deltaX: number; deltaY: number; x: number }
   | { type: "THUMBS_UP" }
   | { type: "FIST" }
@@ -37,6 +39,10 @@ export class GestureEngine {
   private thumbsUpStartTime: number | null = null;
   private thumbsUpTriggered = false;
 
+  // Thumbs-down hold tracking
+  private thumbsDownStartTime: number | null = null;
+  private thumbsDownTriggered = false;
+
   // Fist hold tracking
   private fistStartTime: number | null = null;
   private fistTriggered = false;
@@ -54,6 +60,13 @@ export class GestureEngine {
       this.openPalmStartTime = null;
       this.openPalmTriggered = false;
       this.openPalmDelayPassed = false;
+      
+      // Reset thumbs-down tracking
+      if (this.thumbsDownStartTime !== null) {
+        emit({ type: "THUMBS_DOWN_PROGRESS", progress: 0 });
+      }
+      this.thumbsDownStartTime = null;
+      this.thumbsDownTriggered = false;
       
       // Reset fist tracking
       if (this.fistStartTime !== null) {
@@ -151,6 +164,31 @@ export class GestureEngine {
         }
         this.thumbsUpStartTime = null;
         this.thumbsUpTriggered = false;
+      }
+      
+      // Thumbs-down with hold progress
+      if (isThumbsDown(lm)) {
+        if (this.thumbsDownStartTime === null) {
+          this.thumbsDownStartTime = t;
+        }
+        const holdDuration = t - this.thumbsDownStartTime;
+        const requiredDuration = 3000; // 3 seconds
+        if (holdDuration < requiredDuration && !this.thumbsDownTriggered) {
+          const progress = holdDuration / requiredDuration;
+          emit({ type: "THUMBS_DOWN_PROGRESS", progress });
+        }
+        if (holdDuration >= requiredDuration && !this.thumbsDownTriggered) {
+          emit({ type: "THUMBS_DOWN_HOLD" });
+          this.thumbsDownTriggered = true;
+          this.poseCooldown = t + 900;
+        }
+      } else {
+        // Reset thumbs-down tracking when pose changes
+        if (this.thumbsDownStartTime !== null) {
+          emit({ type: "THUMBS_DOWN_PROGRESS", progress: 0 });
+        }
+        this.thumbsDownStartTime = null;
+        this.thumbsDownTriggered = false;
       }
       
       // Fist with hold progress (for canceling/exiting)
@@ -312,6 +350,44 @@ function isThumbsUp(lm: NormalizedLandmark[]) {
   const thumbSufficientlyExtended = thumbDistance > 0.3;
   
   return thumbSufficientlyExtended && foldedCount >= 2;
+}
+
+function isThumbsDown(lm: NormalizedLandmark[]) {
+  const wrist = lm[0]!;
+  const thumbTip = lm[4]!;
+  
+  // Thumb must be extended (far from wrist)
+  const thumbDistance = dist(thumbTip, wrist);
+  
+  // Get other finger tips
+  const indexTip = lm[8]!;
+  const middleTip = lm[12]!;
+  const ringTip = lm[16]!;
+  const pinkyTip = lm[20]!;
+  
+  const indexDistance = dist(indexTip, wrist);
+  const middleDistance = dist(middleTip, wrist);
+  const ringDistance = dist(ringTip, wrist);
+  const pinkyDistance = dist(pinkyTip, wrist);
+  
+  // In thumbs-down, the thumb should be the most extended
+  // Other fingers should NOT be extended as far as the thumb
+  const indexFolded = indexDistance < thumbDistance * 0.7;
+  const middleFolded = middleDistance < thumbDistance * 0.7;
+  const ringFolded = ringDistance < thumbDistance * 0.7;
+  const pinkyFolded = pinkyDistance < thumbDistance * 0.7;
+  
+  // Count folded fingers - at least 2 of 4 must be folded
+  const foldedCount = [indexFolded, middleFolded, ringFolded, pinkyFolded].filter(Boolean).length;
+  
+  // Thumb must be extended at least 0.3 (absolute minimum distance)
+  const thumbSufficientlyExtended = thumbDistance > 0.3;
+  
+  // Key difference from thumbs-up: Check thumb Y position
+  // In thumbs-down, thumb tip should be BELOW (higher Y value) than wrist
+  const thumbPointingDown = thumbTip.y > wrist.y + 0.05; // thumb tip below wrist
+  
+  return thumbSufficientlyExtended && foldedCount >= 2 && thumbPointingDown;
 }
 
 function isFist(lm: NormalizedLandmark[]) {

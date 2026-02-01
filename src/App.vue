@@ -203,6 +203,9 @@ const fistProgress = ref(0);
 // Open palm progress tracking
 const palmProgress = ref(0);
 
+// Thumbs down progress tracking
+const thumbDownProgress = ref(0);
+
 // Pinch swipe progress tracking
 const pinchSwipeDeltaX = ref(0);
 const pinchSwipeDeltaY = ref(0);
@@ -482,8 +485,13 @@ function handleGesture(ev: GestureEvent) {
       thumbHoldProgress.value = 0;
     }
   } else if (!timerOpen.value) {
-    // Only reset thumb progress if NOT in timer menu
-    if (ev.type === "THUMBS_UP_PROGRESS") {
+    // Open timer menu with thumbs up hold (only if timers are running)
+    const hasRunningTimers = activeTimers.value.some(t => !t.hasFinished);
+    if (hasRunningTimers && ev.type === "THUMBS_UP_PROGRESS") {
+      thumbHoldProgress.value = ev.progress;
+    }
+    if (hasRunningTimers && ev.type === "THUMBS_UP_HOLD") {
+      toggleTimer(true);
       thumbHoldProgress.value = 0;
     }
   }
@@ -547,15 +555,27 @@ function handleGesture(ev: GestureEvent) {
     }
   }
   
+  // Handle thumbs down to cancel/stop all timers (3 seconds) - only if timers are running
+  const hasRunningTimersForCancel = activeTimers.value.some(t => !t.hasFinished);
+  if (hasRunningTimersForCancel && ev.type === "THUMBS_DOWN_PROGRESS") {
+    thumbDownProgress.value = ev.progress;
+  }
+  if (hasRunningTimersForCancel && ev.type === "THUMBS_DOWN_HOLD") {
+    // Stop all active timers
+    multiTimerManager.clearAllTimers();
+    showToast("⏱️ Alle Timer abgebrochen");
+    thumbDownProgress.value = 0;
+    
+    // Close timer menu if it was open
+    if (timerOpen.value) {
+      toggleTimer(false);
+    }
+  }
+  
+  // Close timer menu with open palm
   if (ev.type === "OPEN_PALM") {
-    // Only allow timer menu if timers are actually running (not finished) and no confirmation is pending
-    const hasRunningTimers = activeTimers.value.some(t => !t.hasFinished);
-    if (!showTimerConfirmation.value && hasRunningTimers) {
-      if (timerOpen.value) {
-        toggleTimer(false);
-      } else {
-        toggleTimer(true);
-      }
+    if (timerOpen.value) {
+      toggleTimer(false);
       palmProgress.value = 0;
     }
   }
@@ -771,6 +791,7 @@ onBeforeUnmount(() => {
         :recognition-hint="recognitionHint"
         :recognition-success="recognitionSuccess"
         :thumb-hold-progress="thumbHoldProgress"
+        :thumb-down-progress="thumbDownProgress"
         :fist-progress="fistProgress"
         :has-running-timers="hasRunningTimers"
       />
@@ -834,6 +855,18 @@ onBeforeUnmount(() => {
             <div class="gesture-detail">{{ addTimerMinutes }} Min zu allen Timern</div>
           </div>
 
+          <!-- Cancel All Timers (Thumbs Down) -->
+          <div class="gesture-control-card">
+            <div class="gesture-icon-circle orange">
+              <svg class="gesture-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.737 3h4.018c.163 0 .326.02.485.06L17 4m-7 10v6a2 2 0 002 2h.095c.5 0 .905-.405.905-.905 0-.714.211-1.412.608-2.006L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5" />
+              </svg>
+            </div>
+            <div class="gesture-label">Timer abbrechen</div>
+            <div class="gesture-hint">👎 Daumen runter 3s</div>
+            <div class="gesture-detail">Alle Timer stoppen</div>
+          </div>
+
           <!-- Close Menu (Open Hand) -->
           <div class="gesture-control-card">
             <div class="gesture-icon-circle amber">
@@ -842,14 +875,14 @@ onBeforeUnmount(() => {
               </svg>
             </div>
             <div class="gesture-label">Schließen</div>
-            <div class="gesture-hint">✋ Offene Hand 3s</div>
+            <div class="gesture-hint">✋ Offene Hand</div>
             <div class="gesture-detail">Menü schließen</div>
           </div>
         </div>
 
         <!-- Help Text -->
         <div class="timer-help-text">
-          🤏 Slider: Pinch & Slide | 👍 Zeit hinzufügen: Daumen 3s | ✋ Schließen: Hand 3s
+          🤏 Slider: Pinch & Slide | 👍 Zeit +: Daumen hoch 3s | 👎 Abbrechen: Daumen runter 3s | ✋ Schließen: Hand
         </div>
       </div>
     </div>
@@ -1128,7 +1161,7 @@ video {
 
 .gesture-controls-grid-timer {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
@@ -1172,6 +1205,10 @@ video {
 
 .gesture-icon-circle.amber {
   background: linear-gradient(to bottom right, #fbbf24, #f59e0b);
+}
+
+.gesture-icon-circle.orange {
+  background: linear-gradient(to bottom right, #fb923c, #f97316);
 }
 
 .gesture-svg {
