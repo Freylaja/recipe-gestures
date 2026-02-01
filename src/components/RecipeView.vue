@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { defineProps, defineEmits } from 'vue'
-
 const props = defineProps<{
   steps: string[]
   step: number
   timerOpen: boolean
+  showTimerConfirmation: boolean
+  detectedTimerSeconds: number | null
 }>()
 
 const emit = defineEmits<{
@@ -12,6 +12,21 @@ const emit = defineEmits<{
   (e: 'next'): void
   (e: 'toggle-timer'): void
 }>()
+
+// Format seconds to readable time string
+function formatTime(seconds: number): string {
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = seconds % 60
+  
+  if (hours > 0) {
+    return minutes > 0 ? `${hours} Std ${minutes} Min` : `${hours} Std`
+  }
+  if (minutes > 0) {
+    return secs > 0 ? `${minutes} Min ${secs} Sek` : `${minutes} Min`
+  }
+  return `${secs} Sek`
+}
 </script>
 
 <template>
@@ -33,8 +48,27 @@ const emit = defineEmits<{
             <p class="step-text">{{ props.steps[props.step] }}</p>
           </div>
 
-          <!-- Timer hint if step mentions time -->
-          <div v-if="props.steps[props.step].toLowerCase().includes('min') || props.steps[props.step].toLowerCase().includes('stunde')" class="timer-hint">
+          <!-- Timer confirmation prompt (when timer detected in step) -->
+          <div v-if="props.showTimerConfirmation && props.detectedTimerSeconds" class="timer-confirmation">
+            <div class="timer-confirmation-icon">
+              <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div class="timer-confirmation-content">
+              <div class="timer-confirmation-title">Timer erkannt</div>
+              <div class="timer-confirmation-time">{{ formatTime(props.detectedTimerSeconds) }}</div>
+              <div class="timer-confirmation-action">
+                <svg class="thumbs-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
+                </svg>
+                <span>Daumen hoch 3s halten zum Starten</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Old timer hint (only show if no timer was auto-detected) -->
+          <div v-else-if="props.steps[props.step].toLowerCase().includes('min') || props.steps[props.step].toLowerCase().includes('stunde')" class="timer-hint">
             <div class="timer-hint-icon">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -100,31 +134,16 @@ const emit = defineEmits<{
 
         <div class="help-divider" />
 
-        <div class="help-section">
+        <div class="help-section cancel-section">
           <div class="help-gesture-icon">
-            <svg class="gesture-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" />
-            </svg>
+            <span class="fist-emoji">✊</span>
           </div>
           <div>
-            <div class="help-label">Timer</div>
-            <div class="help-action">Hand 3s öffnen</div>
+            <div class="help-label">Abbrechen</div>
+            <div class="help-action">Faust 5s</div>
           </div>
         </div>
 
-        <div class="help-divider" />
-
-        <div class="help-section">
-          <div class="help-gesture-icon thumbs-up">
-            <svg class="gesture-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
-            </svg>
-          </div>
-          <div>
-            <div class="help-label">Start</div>
-            <div class="help-action">Daumen hoch</div>
-          </div>
-        </div>
       </div>
     </div>
   </div>
@@ -247,6 +266,102 @@ const emit = defineEmits<{
   font-size: 0.875rem;
   color: #78350f;
   font-weight: 500;
+}
+
+/* Timer confirmation prompt */
+.timer-confirmation {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.5rem 2rem;
+  background: linear-gradient(135deg, #10b981, #059669);
+  border-radius: 1.25rem;
+  margin-top: auto;
+  box-shadow: 0 10px 25px rgba(16, 185, 129, 0.3);
+  animation: slideUp 0.5s ease;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.timer-confirmation-icon {
+  width: 4rem;
+  height: 4rem;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.timer-confirmation-icon svg {
+  width: 2rem;
+  height: 2rem;
+  color: white;
+}
+
+.timer-confirmation-content {
+  flex: 1;
+  color: white;
+  text-align: left;
+}
+
+.timer-confirmation-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+  opacity: 0.9;
+}
+
+.timer-confirmation-time {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.timer-confirmation-action {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  opacity: 0.95;
+  font-weight: 500;
+}
+
+.thumbs-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  animation: bounce 2s ease-in-out infinite;
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
 }
 
 .nav-arrow {
@@ -383,6 +498,15 @@ const emit = defineEmits<{
   width: 1px;
   height: 2.5rem;
   background: #cbd5e1;
+}
+
+.cancel-section {
+  opacity: 0.85;
+}
+
+.fist-emoji {
+  font-size: 1.25rem;
+  display: block;
 }
 
 .w-6 { width: 1.5rem; height: 1.5rem; }

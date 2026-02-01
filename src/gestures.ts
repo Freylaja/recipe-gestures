@@ -13,8 +13,10 @@ export type GestureEvent =
   | { type: "OPEN_PALM_PROGRESS"; progress: number }
   | { type: "THUMBS_UP_PROGRESS"; progress: number }
   | { type: "THUMBS_UP_HOLD" }
-  | { type: "PINCH_SWIPE_PROGRESS"; deltaX: number; deltaY: number }
-  | { type: "THUMBS_UP" };
+  | { type: "PINCH_SWIPE_PROGRESS"; deltaX: number; deltaY: number; x: number }
+  | { type: "THUMBS_UP" }
+  | { type: "FIST" }
+  | { type: "FIST_PROGRESS"; progress: number };
 
 export class GestureEngine {
   private lastX: number | null = null;
@@ -52,6 +54,10 @@ export class GestureEngine {
   private thumbsUpStartTime: number | null = null;
   private thumbsUpTriggered = false;
 
+  // Fist hold tracking
+  private fistStartTime: number | null = null;
+  private fistTriggered = false;
+
   update(
     result: HandLandmarkerResult | null,
     t: number,
@@ -59,8 +65,6 @@ export class GestureEngine {
   ) {
     if (!result?.landmarks?.length) {
       this.lastX = this.lastY = this.lastT = null;
-      this.pinchFlickActive = false;
-      this.pinchFlickStartX = null;
       
       // Reset palm progress when no hands detected
       if (this.openPalmStartTime !== null) {
@@ -69,6 +73,13 @@ export class GestureEngine {
       this.openPalmStartTime = null;
       this.openPalmTriggered = false;
       this.openPalmDelayPassed = false;
+      
+      // Reset fist tracking
+      if (this.fistStartTime !== null) {
+        emit({ type: "FIST_PROGRESS", progress: 0 });
+      }
+      this.fistStartTime = null;
+      this.fistTriggered = false;
       return;
     }
 
@@ -77,7 +88,9 @@ export class GestureEngine {
     // Calculate center and pinch early for all detections
     const pinch = dist(lm[4], lm[8]);
     const center = handCenter(lm);
-    const isPinching = pinch < 0.055;
+    // More strict pinch detection: thumb and index finger must actually touch (< 0.03)
+    // This prevents accidental pinch recognition
+    const isPinching = pinch < 0.03;
 
     // Open palm detection - only if NOT pinching
     if (t > this.poseCooldown && !isPinching) {
@@ -146,6 +159,31 @@ export class GestureEngine {
         this.thumbsUpStartTime = null;
         this.thumbsUpTriggered = false;
       }
+      
+      // Fist with hold progress (for canceling/exiting)
+      if (isFist(lm)) {
+        if (this.fistStartTime === null) {
+          this.fistStartTime = t;
+        }
+        const holdDuration = t - this.fistStartTime;
+        const requiredDuration = 5000; // 5 seconds
+        if (holdDuration < requiredDuration && !this.fistTriggered) {
+          const progress = holdDuration / requiredDuration;
+          emit({ type: "FIST_PROGRESS", progress });
+        }
+        if (holdDuration >= requiredDuration && !this.fistTriggered) {
+          emit({ type: "FIST" });
+          this.fistTriggered = true;
+          this.poseCooldown = t + 900;
+        }
+      } else {
+        // Reset fist tracking when pose changes
+        if (this.fistStartTime !== null) {
+          emit({ type: "FIST_PROGRESS", progress: 0 });
+        }
+        this.fistStartTime = null;
+        this.fistTriggered = false;
+      }
     }
     
     // Reset open palm tracking when pinching
@@ -176,8 +214,8 @@ export class GestureEngine {
           this.pinchLastX = center.x;
           this.pinchLastY = center.y;
           
-          // Send progress feedback
-          emit({ type: "PINCH_SWIPE_PROGRESS", deltaX: dx, deltaY: dy });
+          // Send progress feedback with absolute position
+          emit({ type: "PINCH_SWIPE_PROGRESS", deltaX: dx, deltaY: dy, x: center.x });
         }
       }
       
@@ -288,21 +326,51 @@ function isPointing(lm: NormalizedLandmark[]) {
 function isThumbsUp(lm: NormalizedLandmark[]) {
   const wrist = lm[0];
   const thumbTip = lm[4];
-  const thumbMcp = lm[2]; // Thumb base
   
-  // Daumen muss ausgestreckt sein
-  const thumbExtended = dist(thumbTip, wrist) > dist(thumbMcp, wrist) * 1.1;
+  // Thumb must be extended (far from wrist)
+  const thumbDistance = dist(thumbTip, wrist);
   
-  // Prüfe ob andere Finger eingeklappt sind
-  // Vergleiche Fingerspitzen mit ihren mittleren Gelenken (nicht Basis)
-  const indexFolded = dist(lm[8], wrist) < dist(lm[6], wrist);
-  const middleFolded = dist(lm[12], wrist) < dist(lm[10], wrist);
-  const ringFolded = dist(lm[16], wrist) < dist(lm[14], wrist);
-  const pinkyFolded = dist(lm[20], wrist) < dist(lm[18], wrist);
+  // Get other finger tips
+  const indexTip = lm[8];
+  const middleTip = lm[12];
+  const ringTip = lm[16];
+  const pinkyTip = lm[20];
   
-  // Zähle eingeklappte Finger
+  const indexDistance = dist(indexTip, wrist);
+  const middleDistance = dist(middleTip, wrist);
+  const ringDistance = dist(ringTip, wrist);
+  const pinkyDistance = dist(pinkyTip, wrist);
+  
+  // In thumbs-up, the thumb should be the most extended
+  // Other fingers should NOT be extended as far as the thumb
+  // They should be shorter (closer to wrist) than the thumb
+  const indexFolded = indexDistance < thumbDistance * 0.7;
+  const middleFolded = middleDistance < thumbDistance * 0.7;
+  const ringFolded = ringDistance < thumbDistance * 0.7;
+  const pinkyFolded = pinkyDistance < thumbDistance * 0.7;
+  
+  // Count folded fingers - at least 2 of 4 must be folded
   const foldedCount = [indexFolded, middleFolded, ringFolded, pinkyFolded].filter(Boolean).length;
   
-  // Mindestens 3 von 4 Fingern müssen eingeklappt sein
-  return thumbExtended && foldedCount >= 3;
+  // Thumb must be extended at least 0.3 (absolute minimum distance)
+  const thumbSufficientlyExtended = thumbDistance > 0.3;
+  
+  return thumbSufficientlyExtended && foldedCount >= 2;
+}
+
+function isFist(lm: NormalizedLandmark[]) {
+  const wrist = lm[0];
+  const tips = [4, 8, 12, 16, 20]; // thumb, index, middle, ring, pinky tips
+  const bases = [2, 5, 9, 13, 17]; // thumb, index, middle, ring, pinky bases
+  
+  // All fingers should be folded (tips closer to wrist than bases)
+  let foldedCount = 0;
+  for (let i = 0; i < tips.length; i++) {
+    if (dist(lm[tips[i]], wrist) < dist(lm[bases[i]], wrist) * 0.85) {
+      foldedCount++;
+    }
+  }
+  
+  // All 5 fingers should be folded for a proper fist
+  return foldedCount >= 4;
 }

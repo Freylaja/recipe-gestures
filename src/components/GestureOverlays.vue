@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineProps, computed } from 'vue'
+import { computed } from 'vue'
 
 const props = defineProps<{
   mode: 'recipe-selection' | 'ingredients' | 'recipe'
@@ -10,25 +10,21 @@ const props = defineProps<{
   recognitionHint: string
   recognitionSuccess: boolean
   thumbHoldProgress: number
+  fistProgress: number
 }>()
 
 // Invert X because camera is mirrored (scaleX(-1))
 const invertedDeltaX = computed(() => -props.pinchSwipeDeltaX)
 const invertedDeltaY = computed(() => props.pinchSwipeDeltaY)
 </script>
-
 <template>
   <!-- Palm progress indicator -->
   <div v-if="props.palmProgress > 0" class="palmProgress">
-    <svg class="palmProgressRing" width="80" height="80">
-      <circle cx="40" cy="40" r="32" fill="none" stroke="#374151" stroke-width="6" />
-      <circle 
-        cx="40" cy="40" r="32" fill="none" stroke="#4ade80" stroke-width="6" stroke-linecap="round"
-        :stroke-dasharray="`${props.palmProgress * 201} 201`" transform="rotate(-90 40 40)" class="palmProgressFill"
-      />
+    <svg width="90" height="90">
+      <circle cx="45" cy="45" r="34" fill="none" stroke="#374151" stroke-width="6" />
+      <circle cx="45" cy="45" r="34" fill="none" stroke="#4ade80" stroke-width="6" stroke-linecap="round" :stroke-dasharray="`${props.palmProgress * 213} 213`" transform="rotate(-90 45 45)" />
     </svg>
-    <div class="palmProgressText">{{ Math.round(props.palmProgress * 100) }}%</div>
-    <div class="palmProgressLabel">{{ props.timerOpen ? 'Timer abbrechen' : 'Timer aufrufen' }}</div>
+    <div class="palmProgressText">✋ {{ props.timerOpen ? 'Timer abbrechen' : 'Timer aufrufen' }}: {{ Math.round(props.palmProgress * 100) }}%</div>
   </div>
 
   <!-- Recognition hint overlay (ingredients mode) -->
@@ -37,13 +33,22 @@ const invertedDeltaY = computed(() => props.pinchSwipeDeltaY)
     <span class="hintText">{{ props.recognitionHint }}</span>
   </div>
 
-  <!-- Thumbs-up hold progress (ingredients mode) -->
-  <div v-if="props.mode === 'ingredients' && props.thumbHoldProgress > 0" class="thumbHold">
+  <!-- Thumbs-up hold progress (ingredients mode OR recipe mode with timer confirmation) -->
+  <div v-if="(props.mode === 'ingredients' || props.mode === 'recipe') && props.thumbHoldProgress > 0" class="thumbHoldProgress">
     <svg width="90" height="90">
       <circle cx="45" cy="45" r="34" fill="none" stroke="#374151" stroke-width="6" />
-      <circle cx="45" cy="45" r="34" fill="none" stroke="#60a5fa" stroke-width="6" stroke-linecap="round" :stroke-dasharray="`${props.thumbHoldProgress * 213} 213`" transform="rotate(-90 45 45)" />
+      <circle cx="45" cy="45" r="34" fill="none" stroke="#3b82f6" stroke-width="6" stroke-linecap="round" :stroke-dasharray="`${props.thumbHoldProgress * 213} 213`" transform="rotate(-90 45 45)" />
     </svg>
-    <div class="thumbHoldText">Daumen halten: {{ Math.round(props.thumbHoldProgress * 100) }}%</div>
+    <div class="thumbHoldProgressText">👍 Daumen halten: {{ Math.round(props.thumbHoldProgress * 100) }}%</div>
+  </div>
+
+  <!-- Fist hold progress (recipe mode - for canceling) -->
+  <div v-if="props.mode === 'recipe' && props.fistProgress > 0" class="fistProgress">
+    <svg width="90" height="90">
+      <circle cx="45" cy="45" r="34" fill="none" stroke="#374151" stroke-width="6" />
+      <circle cx="45" cy="45" r="34" fill="none" stroke="#ef4444" stroke-width="6" stroke-linecap="round" :stroke-dasharray="`${props.fistProgress * 213} 213`" transform="rotate(-90 45 45)" />
+    </svg>
+    <div class="fistText">✊ Rezept abbrechen: {{ Math.round(props.fistProgress * 100) }}%</div>
   </div>
 
   <!-- Pinch swipe indicator - visible on recipe-selection and recipe modes -->
@@ -105,32 +110,63 @@ const invertedDeltaY = computed(() => props.pinchSwipeDeltaY)
 
 <style scoped>
 /* All overlays are absolutely positioned within the parent */
-.palmProgress { 
-  position: absolute; top: 8px; right: 8px; 
-  width: 60px; height: 60px; 
-  display: flex; flex-direction: column; 
-  align-items: center; justify-content: center; 
+.palmProgress {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.85);
+  padding: 12px 16px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(74, 222, 128, 0.3);
+  border: 2px solid #4ade80;
 }
-.palmProgressRing { position: relative; width: 100%; height: 100%; }
-.palmProgressFill { transition: stroke-dasharray 0.1s ease; }
-.palmProgressText { 
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  color: #4ade80; font-size: 10px; font-weight: bold; z-index: 1;
+
+.palmProgress svg {
+  margin-bottom: 8px;
 }
-.palmProgressLabel { 
-  margin-top: 2px; color: #e8e8e8; font-size: 8px; text-align: center; 
-  background: rgba(0,0,0,0.7); padding: 2px 4px; border-radius: 4px;
-  white-space: nowrap; max-width: 80px; overflow: hidden; text-overflow: ellipsis;
+
+.palmProgressText {
+  color: #dcfce7;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.fistProgress {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.85);
+  padding: 12px 16px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+  border: 2px solid #ef4444;
+}
+
+.fistProgress svg {
+  margin-bottom: 8px;
+}
+
+.fistText {
+  color: #fee2e2;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .pinchSwipeIndicator { 
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   pointer-events: none; z-index: 10; opacity: 1;
-}
-
-.pinchSwipeIndicator.small {
-  /* Smaller version for recipe-selection overlay */
 }
 
 .pinchSwipeIndicator.small .pinchSwipeSvg {
@@ -268,11 +304,39 @@ const invertedDeltaY = computed(() => props.pinchSwipeDeltaY)
 .recognitionHint .hintIcon { font-size: 12px; }
 .recognitionHint .hintText { letter-spacing: 0.2px; }
 
-.thumbHold { 
-  position: absolute; top: 8px; left: 8px; 
-  display: flex; align-items: center; gap: 6px; 
-  background: rgba(96, 165, 250, 0.12); border: 1px solid rgba(96, 165, 250, 0.4); 
-  padding: 4px 8px; border-radius: 8px; 
+.thumbHoldProgress {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.85);
+  padding: 12px 16px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  border: 2px solid #3b82f6;
 }
-.thumbHoldText { color: #60a5fa; font-weight: 600; font-size: 10px; }
+
+.thumbHoldProgress svg {
+  margin-bottom: 8px;
+}
+
+.thumbHoldProgressText {
+  color: #dbeafe;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.thumbHold { 
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center;
+  background: rgba(0, 0, 0, 0.85); padding: 12px 16px; border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); border: 2px solid #3b82f6;
+}
+.thumbHold svg { margin-bottom: 8px; }
+.thumbHoldText { color: #dbeafe; font-weight: 600; font-size: 14px; text-align: center; white-space: nowrap; }
 </style>

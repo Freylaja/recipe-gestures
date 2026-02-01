@@ -2,13 +2,14 @@
 import { onMounted, onBeforeUnmount, ref } from "vue";
 import { initVision } from "./vision";
 import { GestureEngine, type GestureEvent } from "./gestures";
-import { TimerController } from "./timer";
+import { TimerController, MultiTimerManager, type RunningTimer } from "./timer";
 import { loadObjectDetectionModel, detectObjects } from "./objectDetection";
 
 import IngredientScanner from "./components/IngredientScanner.vue";
 import RecipeView from "./components/RecipeView.vue";
 import GestureOverlays from "./components/GestureOverlays.vue";
 import RecipeSelection from "./components/RecipeSelection.vue";
+import TimerOverlay from "./components/TimerOverlay.vue";
 
 const videoRef = ref<HTMLVideoElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
@@ -184,6 +185,16 @@ const toast = ref("");
 const timerOpen = ref(false);
 const timerLabel = ref("00:00");
 
+// Active timers for overlay
+const activeTimers = ref<RunningTimer[]>([]);
+
+// Detected timer from current step
+const detectedTimerSeconds = ref<number | null>(null);
+const showTimerConfirmation = ref(false);
+
+// Fist progress for canceling
+const fistProgress = ref(0);
+
 // Open palm progress tracking
 const palmProgress = ref(0);
 
@@ -196,6 +207,10 @@ const timerUnits = ['Sekunden', 'Minuten', 'Stunden'];
 const currentUnit = ref(0); // 0=Sekunden, 1=Minuten, 2=Stunden
 const timerValues = ref([0, 10, 0]); // [Stunden, Minuten, Sekunden]
 
+// Manual timer slider (minutes)
+const manualTimerMinutes = ref(5);
+const pinchStartX = ref<number | null>(null);
+
 // Timer clock rotation
 const timerAngle = ref(0); // Current clock angle in radians
 const maxMinutes = 60; // Maximum timer setting in minutes
@@ -205,12 +220,49 @@ function showToast(msg: string) {
   setTimeout(() => (toast.value = ""), 700);
 }
 
+// Extract time duration from step text (e.g., "25 Minuten", "1 Stunde", "30 Sekunden")
+function extractTimerFromStep(stepText: string): number | null {
+  const text = stepText.toLowerCase();
+  
+  // Match patterns like "25 Minuten", "1 Stunde", "30 Sekunden", "2-3 Minuten"
+  const minuteMatch = text.match(/(\d+)(?:-\d+)?\s*(?:min|minute|minuten)/);
+  if (minuteMatch && minuteMatch[1]) {
+    return parseInt(minuteMatch[1]) * 60; // Convert to seconds
+  }
+  
+  const hourMatch = text.match(/(\d+)(?:-\d+)?\s*(?:std|stunde|stunden)/);
+  if (hourMatch && hourMatch[1]) {
+    return parseInt(hourMatch[1]) * 3600; // Convert to seconds
+  }
+  
+  const secondMatch = text.match(/(\d+)(?:-\d+)?\s*(?:sek|sekunde|sekunden)/);
+  if (secondMatch && secondMatch[1]) {
+    return parseInt(secondMatch[1]); // Already in seconds
+  }
+  
+  return null;
+}
+
+function checkTimerInCurrentStep() {
+  const currentStepText = steps.value[step.value];
+  if (currentStepText) {
+    const timerSeconds = extractTimerFromStep(currentStepText);
+    detectedTimerSeconds.value = timerSeconds;
+    showTimerConfirmation.value = timerSeconds !== null;
+  } else {
+    detectedTimerSeconds.value = null;
+    showTimerConfirmation.value = false;
+  }
+}
+
 function nextStep() {
   step.value = Math.min(step.value + 1, steps.value.length - 1);
+  checkTimerInCurrentStep();
   showToast("Weiter");
 }
 function prevStep() {
   step.value = Math.max(step.value - 1, 0);
+  checkTimerInCurrentStep();
   showToast("Zurück");
 }
 
@@ -221,6 +273,24 @@ function selectRecipe(index: number) {
   mode.value = 'ingredients';
   step.value = 0;
   showToast(`${selectedRecipe.value.title} ausgewählt!`);
+}
+
+function startRecipeMode() {
+  mode.value = 'recipe';
+  step.value = 0;
+  checkTimerInCurrentStep();
+}
+
+function cancelRecipe() {
+  mode.value = 'recipe-selection';
+  step.value = 0;
+  selectedRecipe.value = null;
+  ingredients.value = [];
+  steps.value = [];
+  detectedTimerSeconds.value = null;
+  showTimerConfirmation.value = false;
+  multiTimerManager.clearAllTimers();
+  showToast("Rezept abgebrochen");
 }
 
 function nextRecipe() {
@@ -243,7 +313,7 @@ function checkNextIngredient() {
     // Check if all ingredients are checked
     if (ingredients.value.every(ing => ing.checked)) {
       setTimeout(() => {
-        mode.value = 'recipe';
+        startRecipeMode();
         showToast("Alle Zutaten da! Los geht's!");
       }, 800);
     }
@@ -327,15 +397,40 @@ function handleClockPointing(angle: number) {
   }
 }
 
+function startDetectedTimer() {
+  if (detectedTimerSeconds.value && detectedTimerSeconds.value > 0) {
+    const timerLabel = `Schritt ${step.value + 1}`;
+    multiTimerManager.createTimer(detectedTimerSeconds.value, timerLabel);
+    showTimerConfirmation.value = false;
+    
+    const minutes = Math.floor(detectedTimerSeconds.value / 60);
+    const seconds = detectedTimerSeconds.value % 60;
+    const timeStr = minutes > 0 ? `${minutes} Min` : `${seconds} Sek`;
+    showToast(`Timer gestartet: ${timeStr}`);
+  }
+}
+
 function startTimerWithCustomTime() {
   const totalSeconds = timerValues.value[0] * 3600 + timerValues.value[1] * 60 + timerValues.value[2];
   if (totalSeconds > 0) {
+    // Create a label for the timer based on current step
+    const timerLabel = `Schritt ${step.value + 1}`;
+    multiTimerManager.createTimer(totalSeconds, timerLabel);
+    
+    // Also keep the old single timer for the modal
     timer.setTime(totalSeconds);
     timer.start();
+    
+    // Close timer modal
+    toggleTimer(false);
+    showToast("Timer gestartet!");
   }
 }
 
 const timer = new TimerController((label) => (timerLabel.value = label));
+const multiTimerManager = new MultiTimerManager(() => {
+  activeTimers.value = multiTimerManager.getActiveTimers();
+});
 const engine = new GestureEngine();
 
 let raf = 0;
@@ -383,7 +478,7 @@ function handleGesture(ev: GestureEvent) {
       // Confirm all ingredients present
       ingredients.value = ingredients.value.map(i => ({ ...i, checked: true }));
       showToast("Alle Zutaten bestätigt!");
-      setTimeout(() => { mode.value = 'recipe'; }, 800);
+      setTimeout(() => { startRecipeMode(); }, 800);
     }
     if (ev.type === "PINCH_FLICK_LEFT") {
       uncheckLastIngredient();
@@ -392,46 +487,101 @@ function handleGesture(ev: GestureEvent) {
   }
   
   // Recipe mode
-  // Handle pinch-flick for recipe navigation (only when timer closed)
-  if (!timerOpen.value) {
-    if (ev.type === "PINCH_FLICK_LEFT") prevStep();
-    if (ev.type === "PINCH_FLICK_RIGHT") nextStep();
+  // Handle fist for canceling/exiting recipe
+  if (ev.type === "FIST_PROGRESS") {
+    fistProgress.value = ev.progress;
+  }
+  if (ev.type === "FIST") {
+    cancelRecipe();
+    fistProgress.value = 0;
   }
   
-  // Handle timer unit navigation (only when timer open)
+  // Handle thumbs up for timer confirmation (if timer detected in current step)
+  if (showTimerConfirmation.value) {
+    if (ev.type === "THUMBS_UP_PROGRESS") {
+      thumbHoldProgress.value = ev.progress;
+    }
+    if (ev.type === "THUMBS_UP_HOLD") {
+      startDetectedTimer();
+      thumbHoldProgress.value = 0;
+    }
+  } else if (!timerOpen.value) {
+    // Only reset thumb progress if NOT in timer menu
+    if (ev.type === "THUMBS_UP_PROGRESS") {
+      thumbHoldProgress.value = 0;
+    }
+  }
+  
+  // Handle pinch-flick for recipe navigation (only when timer closed)
+  if (!timerOpen.value) {
+    if (ev.type === "PINCH_FLICK_LEFT") nextStep();
+    if (ev.type === "PINCH_FLICK_RIGHT") prevStep();
+  }
+  
+  // Handle timer menu (only when timer open)
   if (timerOpen.value) {
-    if (ev.type === "PINCH_CLOCK") {
-      handleClockPinch(ev.angle);
+    // Track thumbs up progress for visual feedback
+    if (ev.type === "THUMBS_UP_PROGRESS") {
+      thumbHoldProgress.value = ev.progress;
     }
-    if (ev.type === "POINT_CLOCK") {
-      handleClockPointing(ev.angle);
+    
+    // Adjust timer slider with pinch-swipe gesture
+    if (ev.type === "PINCH_SWIPE_PROGRESS") {
+      // Only update if we have a valid position (not the reset event with deltaX: 0)
+      if (ev.deltaX !== 0) {
+        // Initialize start position on first progress event
+        if (pinchStartX.value === null) {
+          pinchStartX.value = ev.x;
+        }
+        
+        // Map hand X position (0.0 to 1.0) to timer minutes (1 to 60)
+        // Invert X because camera is mirrored (scaleX(-1))
+        // Left side (0.2) = 60 minutes, right side (0.8) = 1 minute
+        const screenLeft = 0.2;
+        const screenRight = 0.8;
+        const screenRange = screenRight - screenLeft;
+        
+        // Invert and clamp position to screen range
+        const invertedX = 1 - ev.x;
+        const clampedX = Math.max(screenLeft, Math.min(screenRight, invertedX));
+        
+        // Map to minutes (1-60)
+        const normalizedPosition = (clampedX - screenLeft) / screenRange;
+        manualTimerMinutes.value = Math.round(1 + normalizedPosition * 59);
+      } else {
+        // Reset when hand is released (deltaX: 0)
+        pinchStartX.value = null;
+      }
     }
-    if (ev.type === "SWIPE_LEFT") {
-      currentUnit.value = Math.max(0, currentUnit.value - 1);
-      showToast(timerUnits[currentUnit.value]);
+    
+    // Reset start position when pinch ends with a flick
+    if (ev.type === "PINCH_FLICK_LEFT" || ev.type === "PINCH_FLICK_RIGHT") {
+      pinchStartX.value = null;
     }
-    if (ev.type === "SWIPE_RIGHT") {
-      currentUnit.value = Math.min(2, currentUnit.value + 1);
-      showToast(timerUnits[currentUnit.value]);
-    }
-    if (ev.type === "SWIPE_UP") {
-      adjustTimerValue(1);
-    }
-    if (ev.type === "SWIPE_DOWN") {
-      adjustTimerValue(-1);
+    
+    // Start new timer with selected minutes (thumbs up for 3 seconds)
+    if (ev.type === "THUMBS_UP_HOLD") {
+      const timerId = multiTimerManager.createTimer(manualTimerMinutes.value * 60, "Manual Timer");
+      showToast(`⏱️ Timer gestartet: ${manualTimerMinutes.value} Min`);
+      thumbHoldProgress.value = 0;
+      return;
     }
   }
   
   if (ev.type === "OPEN_PALM") {
-    toggleTimer();
-    palmProgress.value = 0; // Reset after activation
+    // Close timer menu when open hand detected
+    if (timerOpen.value) {
+      toggleTimer(false);
+      palmProgress.value = 0;
+    }
+    // Or open timer menu if not already open (only allow manual timer when no auto-timer is waiting for confirmation)
+    else if (!showTimerConfirmation.value) {
+      toggleTimer();
+      palmProgress.value = 0;
+    }
   }
   if (ev.type === "OPEN_PALM_PROGRESS") {
     palmProgress.value = ev.progress;
-  }
-  if (ev.type === "THUMBS_UP") {
-    startTimerWithCustomTime();
-    showToast("Timer Start");
   }
 }
 
@@ -467,7 +617,7 @@ async function detectObjectsLoop() {
         // Check if all ingredients are now checked
         if (ingredients.value.every(ing => ing.checked)) {
           setTimeout(() => {
-            mode.value = 'recipe';
+            startRecipeMode();
             showToast("Alle Zutaten da! Los geht's!");
           }, 1000);
           return; // Exit early if all done
@@ -565,10 +715,15 @@ onBeforeUnmount(() => {
       :steps="steps"
       :step="step"
       :timer-open="timerOpen"
+      :show-timer-confirmation="showTimerConfirmation"
+      :detected-timer-seconds="detectedTimerSeconds"
       @prev="prevStep"
       @next="nextStep"
       @toggle-timer="toggleTimer"
     />
+
+    <!-- Timer Overlay - shows all active timers (only in recipe mode) -->
+    <TimerOverlay v-if="mode === 'recipe'" :timers="activeTimers" />
 
     <!-- Hidden video and canvas for gesture detection -->
     <div class="gesture-capture" :class="{ 'centered': mode === 'ingredients' }">
@@ -592,6 +747,7 @@ onBeforeUnmount(() => {
         :recognition-hint="recognitionHint"
         :recognition-success="recognitionSuccess"
         :thumb-hold-progress="thumbHoldProgress"
+        :fist-progress="fistProgress"
       />
     </div>
 
@@ -601,87 +757,75 @@ onBeforeUnmount(() => {
     <div v-if="timerOpen" class="timer-gesture-menu">
       <div class="timer-menu-card">
         <div class="timer-menu-header">
-          <h2 class="timer-menu-title">Timer Steuerung</h2>
-          <p class="timer-menu-subtitle">Verwende Gesten zur Steuerung</p>
+          <h2 class="timer-menu-title">⏱️ Timer Steuerung</h2>
+          <p class="timer-menu-subtitle" v-if="activeTimers.length > 0">{{ activeTimers.length }} Timer aktiv</p>
+          <p class="timer-menu-subtitle" v-else>Keine Timer laufen</p>
         </div>
 
-        <!-- Current Timer Display -->
-        <div class="timer-display-box">
-          <div class="timer-display-content">
-            <div class="timer-icon-wrapper">
-              <svg class="timer-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+        <!-- Active Timers List -->
+        <div v-if="activeTimers.length > 0" class="active-timers-list">
+          <div v-for="t in activeTimers" :key="t.id" class="active-timer-item">
+            <div class="timer-item-label">{{ t.label }}</div>
+            <div class="timer-item-time">{{ t.remaining }}</div>
+            <div :class="['timer-item-status', t.hasFinished ? 'finished' : 'running']">
+              {{ t.hasFinished ? '✓ Fertig' : '⏱️ Läuft' }}
             </div>
-            <div class="timer-time-display">{{ timerLabel }}</div>
-            <div class="timer-status-text">{{ timer.isRunning ? 'Läuft' : timer.isPaused ? 'Pausiert' : 'Bereit' }}</div>
+          </div>
+        </div>
+
+        <!-- Timer Duration Slider -->
+        <div class="timer-slider-section">
+          <div class="timer-slider-header">
+            <label class="timer-slider-label">Timer-Dauer einstellen</label>
+            <div class="timer-slider-value">{{ manualTimerMinutes }} Min</div>
+          </div>
+          <input 
+            type="range" 
+            v-model.number="manualTimerMinutes" 
+            min="1" 
+            max="60" 
+            step="1" 
+            class="timer-slider"
+          />
+          <div class="timer-slider-markers">
+            <span>1 Min</span>
+            <span>15 Min</span>
+            <span>30 Min</span>
+            <span>45 Min</span>
+            <span>60 Min</span>
           </div>
         </div>
 
         <!-- Gesture Controls Grid -->
-        <div class="gesture-controls-grid">
+        <div class="gesture-controls-grid-timer">
           <!-- Start Timer (Thumbs Up) -->
-          <button @click="startTimerWithCustomTime()" :disabled="timer.isRunning" class="gesture-control-btn" :class="{ 'btn-disabled': timer.isRunning }">
+          <div class="gesture-control-card">
             <div class="gesture-icon-circle green">
               <svg class="gesture-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
               </svg>
             </div>
-            <div class="gesture-label">Timer starten</div>
-            <div class="gesture-hint">👍 Daumen hoch</div>
-          </button>
-
-          <!-- Pause Timer (Peace) -->
-          <button @click="timer.pause()" :disabled="!timer.isRunning" class="gesture-control-btn" :class="{ 'btn-disabled': !timer.isRunning }">
-            <div class="gesture-icon-circle blue">
-              <svg class="gesture-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <div class="gesture-label">Pausieren</div>
-            <div class="gesture-hint">✌️ Peace Zeichen</div>
-          </button>
-
-          <!-- Stop Timer (Fist) -->
-          <button @click="timer.stop()" :disabled="!timer.isRunning && !timer.isPaused" class="gesture-control-btn" :class="{ 'btn-disabled': !timer.isRunning && !timer.isPaused }">
-            <div class="gesture-icon-circle red">
-              <svg class="gesture-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10h6v4H9z" />
-              </svg>
-            </div>
-            <div class="gesture-label">Stoppen</div>
-            <div class="gesture-hint">✊ Faust</div>
-          </button>
+            <div class="gesture-label">Starten</div>
+            <div class="gesture-hint">👍 Daumen hoch 3s</div>
+            <div class="gesture-detail">{{ manualTimerMinutes }} Minuten</div>
+          </div>
 
           <!-- Close Menu (Open Hand) -->
-          <button @click="toggleTimer(false)" class="gesture-control-btn">
+          <div class="gesture-control-card">
             <div class="gesture-icon-circle amber">
               <svg class="gesture-svg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </div>
             <div class="gesture-label">Schließen</div>
-            <div class="gesture-hint">✋ Offene Hand</div>
-          </button>
-        </div>
-
-        <!-- Quick Time Adjust -->
-        <div class="quick-time-adjust">
-          <button @click="timer.addSeconds(-30)" class="time-adjust-btn">
-            <span class="time-adjust-text">-30s</span>
-          </button>
-          <button @click="timer.addSeconds(30)" class="time-adjust-btn">
-            <span class="time-adjust-text">+30s</span>
-          </button>
-          <button @click="timer.addSeconds(60)" class="time-adjust-btn">
-            <span class="time-adjust-text">+1min</span>
-          </button>
+            <div class="gesture-hint">✋ Offene Hand 3s</div>
+            <div class="gesture-detail">Menü schließen</div>
+          </div>
         </div>
 
         <!-- Help Text -->
         <div class="timer-help-text">
-          💡 Halte die Geste 3-5 Sekunden
+          🤏 Slider: Pinch & Slide | � Starten: Daumen 3s | ✋ Schließen: Hand 3s
         </div>
       </div>
     </div>
@@ -812,44 +956,143 @@ video {
   color: #64748b;
 }
 
-.timer-display-box {
-  background: linear-gradient(to bottom right, #fff7ed, #fed7aa);
+/* Active Timers List */
+.active-timers-list {
+  background: #f8fafc;
   border-radius: 1rem;
-  padding: 2rem;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.active-timer-item {
+  background: white;
+  border-left: 4px solid #3b82f6;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.active-timer-item:last-child {
+  margin-bottom: 0;
+}
+
+.timer-item-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #475569;
+  flex: 1;
+}
+
+.timer-item-time {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #1e293b;
+  margin: 0 1rem;
+  min-width: 80px;
+  text-align: right;
+}
+
+.timer-item-status {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+}
+
+.timer-item-status.running {
+  background: #dbeafe;
+  color: #0369a1;
+}
+
+.timer-item-status.finished {
+  background: #dcfce7;
+  color: #166534;
+}
+
+/* Timer Slider Section */
+.timer-slider-section {
+  background: #f8fafc;
+  border-radius: 1rem;
+  padding: 1.5rem;
   margin-bottom: 1.5rem;
 }
 
-.timer-display-content {
-  text-align: center;
-}
-
-.timer-icon-wrapper {
-  width: 4rem;
-  height: 4rem;
-  background: #f97316;
-  border-radius: 9999px;
+.timer-slider-header {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  justify-content: center;
-  margin: 0 auto 1rem;
+  margin-bottom: 1rem;
 }
 
-.timer-icon {
-  width: 2rem;
-  height: 2rem;
-  color: white;
+.timer-slider-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #475569;
 }
 
-.timer-time-display {
-  font-size: 3rem;
+.timer-slider-value {
+  font-size: 1.5rem;
   font-weight: bold;
-  color: #1e293b;
-  margin-bottom: 0.5rem;
+  color: #3b82f6;
 }
 
-.timer-status-text {
-  color: #78350f;
-  font-weight: 500;
+.timer-slider {
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(to right, #dbeafe, #3b82f6);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.timer-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+  transition: all 0.2s;
+}
+
+.timer-slider::-webkit-slider-thumb:hover {
+  background: #2563eb;
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.6);
+}
+
+.timer-slider::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+  transition: all 0.2s;
+}
+
+.timer-slider::-moz-range-thumb:hover {
+  background: #2563eb;
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.6);
+}
+
+.timer-slider-markers {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
 }
 
 .gesture-controls-grid {
@@ -859,29 +1102,26 @@ video {
   margin-bottom: 1.5rem;
 }
 
-.gesture-control-btn {
+.gesture-controls-grid-timer {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.gesture-control-card {
   background: white;
   border: 2px solid #e2e8f0;
   border-radius: 1rem;
   padding: 1.5rem;
-  cursor: pointer;
-  transition: all 0.2s;
   text-align: center;
+  transition: all 0.2s;
 }
 
-.gesture-control-btn:hover:not(.btn-disabled) {
-  border-color: #f97316;
-  transform: scale(1.02);
+.gesture-control-card:hover {
+  border-color: #3b82f6;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-}
-
-.gesture-control-btn:active:not(.btn-disabled) {
-  transform: scale(0.98);
-}
-
-.btn-disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  transform: translateY(-2px);
 }
 
 .gesture-icon-circle {
@@ -927,33 +1167,13 @@ video {
 .gesture-hint {
   font-size: 0.875rem;
   color: #64748b;
+  margin-bottom: 0.5rem;
 }
 
-.quick-time-adjust {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: center;
-  margin-bottom: 1.5rem;
-}
-
-.time-adjust-btn {
-  background: #f1f5f9;
-  border: none;
-  border-radius: 0.5rem;
-  padding: 0.75rem 1.5rem;
-  font-weight: 600;
-  color: #475569;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.time-adjust-btn:hover {
-  background: #e2e8f0;
-  transform: scale(1.05);
-}
-
-.time-adjust-text {
-  font-size: 0.875rem;
+.gesture-detail {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  font-weight: 500;
 }
 
 .timer-help-text {

@@ -5,8 +5,10 @@ export class TimerController {
   private last = 0;
   private raf: number | null = null;
   public hasFinished = false;
+  private onUpdate: (s: string) => void;
 
-  constructor(private onUpdate: (s: string) => void) {
+  constructor(onUpdate: (s: string) => void) {
+    this.onUpdate = onUpdate;
     this.emit();
   }
 
@@ -76,5 +78,67 @@ export class TimerController {
     const mm = String(Math.floor(s / 60)).padStart(2, "0");
     const ss = String(s % 60).padStart(2, "0");
     this.onUpdate(`${mm}:${ss}`);
+  }
+}
+
+// Multiple timer management
+export interface RunningTimer {
+  id: number
+  label: string
+  remaining: string
+  hasFinished: boolean
+  controller: TimerController
+}
+
+export class MultiTimerManager {
+  private timers: Map<number, RunningTimer> = new Map()
+  private nextId = 1
+  private onUpdate: () => void;
+  
+  constructor(onUpdate: () => void) {
+    this.onUpdate = onUpdate;
+  }
+
+  createTimer(totalSeconds: number, label?: string): number {
+    const id = this.nextId++
+    const timer: RunningTimer = {
+      id,
+      label: label || `Timer ${id}`,
+      remaining: '00:00',
+      hasFinished: false,
+      controller: new TimerController((timeString) => {
+        const existing = this.timers.get(id)
+        if (existing) {
+          existing.remaining = timeString
+          existing.hasFinished = existing.controller.hasFinished
+          this.onUpdate()
+        }
+      })
+    }
+    
+    timer.controller.setTime(totalSeconds)
+    timer.controller.start()
+    this.timers.set(id, timer)
+    this.onUpdate()
+    return id
+  }
+
+  removeTimer(id: number) {
+    const timer = this.timers.get(id)
+    if (timer) {
+      timer.controller.stop()
+      this.timers.delete(id)
+      this.onUpdate()
+    }
+  }
+
+  getActiveTimers(): RunningTimer[] {
+    return Array.from(this.timers.values())
+  }
+
+  clearAllTimers() {
+    this.timers.forEach(timer => timer.controller.stop())
+    this.timers.clear()
+    this.onUpdate()
   }
 }
