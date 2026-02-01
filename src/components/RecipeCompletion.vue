@@ -56,7 +56,7 @@ watch(() => props.thumbUpProgress, (progress) => {
         <div class="completion-content">
           <h1 class="completion-title">Glückwunsch!</h1>
           <p class="completion-text">{{ props.recipeName }} ist fertig</p>
-          <p class="completion-subtitle">Du hast es geschafft! 🥳</p>
+          <p class="completion-subtitle">Guten Appetit!</p>
         </div>
 
         <!-- Thumbs up gesture indicator -->

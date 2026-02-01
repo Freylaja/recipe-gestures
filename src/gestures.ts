@@ -70,9 +70,20 @@ export class GestureEngine {
     // Calculate center and pinch early for all detections
     const pinch = dist(lm[4]!, lm[8]!);
     const center = handCenter(lm);
-    // More strict pinch detection: thumb and index finger must actually touch (< 0.03)
-    // This prevents accidental pinch recognition
-    const isPinching = pinch < 0.03;
+    // Robust pinch detection with multiple criteria:
+    // 1. XY distance check (< 0.04 for better reliability)
+    // 2. Z-axis depth check (< 0.03) to ensure fingers are at same depth
+    // 3. Middle/ring/pinky should be somewhat extended (not a fist)
+    const pinchXY = pinch;
+    const pinchZ = Math.abs(lm[4]!.z - lm[8]!.z);
+    const wrist = lm[0]!;
+    
+    // Check if other fingers are extended (not making a fist while pinching)
+    const middleDist = dist(lm[12]!, wrist);
+    const ringDist = dist(lm[16]!, wrist);
+    const fingersNotFullyClosed = (middleDist + ringDist) > 0.2;
+    
+    const isPinching = pinchXY < 0.04 && pinchZ < 0.03 && fingersNotFullyClosed;
 
     // Open palm detection - only if NOT pinching
     if (t > this.poseCooldown && !isPinching) {
@@ -189,13 +200,17 @@ export class GestureEngine {
           // Track pinch movement for feedback and swipe detection
           const dx = center.x - this.pinchStartX!;
           const dy = center.y - this.pinchStartY!;
+          const distance = Math.hypot(dx, dy);
           
-          // Save current position for release detection
-          this.pinchLastX = center.x;
-          this.pinchLastY = center.y;
-          
-          // Send progress feedback with absolute position
-          emit({ type: "PINCH_SWIPE_PROGRESS", deltaX: dx, deltaY: dy, x: center.x });
+          // Deadzone: Ignore micro-movements (< 0.015) to filter hand jitter
+          if (distance > 0.015) {
+            // Save current position for release detection
+            this.pinchLastX = center.x;
+            this.pinchLastY = center.y;
+            
+            // Send progress feedback with absolute position
+            emit({ type: "PINCH_SWIPE_PROGRESS", deltaX: dx, deltaY: dy, x: center.x });
+          }
         }
       }
       

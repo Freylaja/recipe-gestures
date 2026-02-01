@@ -288,7 +288,7 @@ function nextStep() {
     // Go to completion screen
     mode.value = 'recipe-completion';
     completionThumbProgress.value = 0;
-    showToast("✨ Glückwunsch!");
+    showToast("Glückwunsch!");
   } else {
     step.value = Math.min(step.value + 1, steps.value.length - 1);
     checkTimerInCurrentStep();
@@ -527,10 +527,13 @@ function handleGesture(ev: GestureEvent) {
       }
     }
     
-    // Reset start position when pinch ends
+    // Ignore flick events in timer mode - they should not trigger navigation
+    // Only reset the pinch tracking state on any pinch-related event end
     if (ev.type === "PINCH_FLICK_LEFT" || ev.type === "PINCH_FLICK_RIGHT") {
       pinchStartX.value = null;
       pinchStartSliderPosition.value = null;
+      // Don't navigate - these are accidental flicks during slider adjustment
+      return;
     }
     
     // Add minutes to all active timers with thumbs up (3 seconds)
