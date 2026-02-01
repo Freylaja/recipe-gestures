@@ -494,6 +494,10 @@ function handleGesture(ev: GestureEvent) {
       toggleTimer(true);
       thumbHoldProgress.value = 0;
     }
+    // Reset thumb progress if no timers are running and no confirmation needed
+    if (!hasRunningTimers && ev.type === "THUMBS_UP_PROGRESS") {
+      thumbHoldProgress.value = 0;
+    }
   }
   
   // Handle pinch-flick for recipe navigation (only when timer closed)

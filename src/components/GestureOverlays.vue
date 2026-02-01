@@ -110,7 +110,7 @@ const invertedDeltaY = computed(() => props.pinchSwipeDeltaY)
     <!-- Direction label -->
     <div class="pinchSwipeLabel">
       <div class="pinchSwipeArrow">
-        {{ invertedDeltaX > 0 ? '→' : '←' }}
+        {{ invertedDeltaX > 0 ? '←' : '→' }}
       </div>
       <div class="pinchSwipeText">
         {{ invertedDeltaX > 0 ? 'Zurück' : 'Weiter' }}
