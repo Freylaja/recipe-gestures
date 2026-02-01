@@ -14,6 +14,16 @@ const props = defineProps<{
 <template>
   <div class="timer-overlay">
     <div class="timer-container">
+      <!-- Timer menu hint (when timers are running) -->
+      <div v-if="props.timers.length > 0 && props.timers.some(t => !t.hasFinished)" class="timer-menu-hint">
+        <div class="timer-menu-hint-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="hint-svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6.633 10.25c.806 0 1.533-.446 2.031-1.08a9.041 9.041 0 0 1 2.861-2.4c.723-.384 1.35-.956 1.653-1.715a4.498 4.498 0 0 0 .322-1.672V2.75a.75.75 0 0 1 .75-.75 2.25 2.25 0 0 1 2.25 2.25c0 1.152-.26 2.243-.723 3.218-.266.558.107 1.282.725 1.282m0 0h3.126c1.026 0 1.945.694 2.054 1.715.045.422.068.85.068 1.285a11.95 11.95 0 0 1-2.649 7.521c-.388.482-.987.729-1.605.729H13.48c-.483 0-.964-.078-1.423-.23l-3.114-1.04a4.501 4.501 0 0 0-1.423-.23H5.904m10.598-9.75H14.25M5.904 18.5c.083.205.173.405.27.602.197.4-.078.898-.523.898h-.908c-.889 0-1.713-.518-1.972-1.368a12 12 0 0 1-.521-3.507c0-1.553.295-3.036.831-4.398C3.387 9.953 4.167 9.5 5 9.5h1.053c.472 0 .745.556.5.96a8.958 8.958 0 0 0-1.302 4.665c0 1.194.232 2.333.654 3.375Z" />
+          </svg>
+        </div>
+        <div class="timer-menu-hint-text">3s für Timer-Menü</div>
+      </div>
+
       <!-- Active timers -->
       <div 
         v-for="timer in props.timers" 
@@ -22,11 +32,11 @@ const props = defineProps<{
         :class="{ 'finished': timer.hasFinished }"
       >
         <div class="timer-icon">
-          <svg v-if="!timer.hasFinished" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <svg v-if="!timer.hasFinished" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="timer-svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
           </svg>
-          <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+          <svg v-else xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="timer-svg">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" />
           </svg>
         </div>
         <div class="timer-content">
@@ -128,6 +138,11 @@ const props = defineProps<{
   height: 1.25rem;
 }
 
+.timer-svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
 .timer-content {
   flex: 1;
   display: flex;
@@ -215,5 +230,50 @@ const props = defineProps<{
   font-size: 0.8125rem;
   font-weight: 600;
   color: #374151;
+}
+
+.timer-menu-hint {
+  background: rgba(59, 130, 246, 0.95);
+  backdrop-filter: blur(10px);
+  border-radius: 10px;
+  padding: 0.625rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  border: 2px solid #60a5fa;
+  min-width: 180px;
+  animation: slideIn 0.3s ease, pulseHint 2s ease-in-out infinite 0.5s;
+}
+
+.timer-menu-hint-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+}
+
+.timer-menu-hint-icon .hint-svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.timer-menu-hint-text {
+  flex: 1;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: white;
+  white-space: nowrap;
+}
+
+@keyframes pulseHint {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  }
+  50% {
+    transform: scale(1.03);
+    box-shadow: 0 6px 16px rgba(59, 130, 246, 0.5);
+  }
 }
 </style>
