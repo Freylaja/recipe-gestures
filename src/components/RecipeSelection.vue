@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineProps, defineEmits, ref, computed } from 'vue'
+import { computed } from 'vue'
 
 interface Recipe {
   id: string
@@ -8,6 +8,7 @@ interface Recipe {
   servings: number
   difficulty: string
   category: string
+  image?: string
 }
 
 const props = defineProps<{
@@ -22,12 +23,12 @@ const emit = defineEmits<{
   (e: 'prev-recipe'): void
 }>()
 
-const currentRecipe = computed(() => props.recipes[props.currentRecipeIndex])
+const currentRecipe = computed<Recipe | null>(() => props.recipes[props.currentRecipeIndex] ?? null)
 const isSelecting = computed(() => props.thumbProgress > 0)
 </script>
 
 <template>
-  <div class="recipe-selection">
+  <div class="recipe-selection" v-if="currentRecipe">
     <!-- Recipe Card -->
     <div class="card-wrapper">
       <div class="recipe-card">
@@ -460,7 +461,8 @@ const isSelecting = computed(() => props.thumbProgress > 0)
 
 .progress-bar-fill {
   position: absolute;
-  inset-y: 0;
+  top: 0;
+  bottom: 0;
   left: 0;
   background: linear-gradient(to right, #22c55e, #10b981);
   border-radius: 9999px;

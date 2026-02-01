@@ -87,11 +87,11 @@ steps: [
       { name: "Zimt", checked: false, detectClass: null },
       { name: "Puderzucker", checked: false, detectClass: null }
     ],
-    steps: [
+steps: [
       "Ofen auf 180°C Ober-/Unterhitze vorheizen.",
-      "Äpfel schälen, entkernen und in dünne Spalten schneiden.",
-      "Mehl mit Backpulver und Zimt in einer Schüssel vermischen.",
-      "Eier, Zucker und Öl in einer separaten Schüssel schaumig schlagen.",
+      "Drei Äpfel schälen, entkernen und in dünne Spalten schneiden.",
+      "200 Gramm Mehl mit Backpulver und Zimt in einer Schüssel vermischen.",
+      "Drei Eier, 100 Gramm Zucker und einen Schuss Öl in einer separaten Schüssel schaumig schlagen.",
       "Mehlmischung unter die Ei-Masse heben, bis ein glatter Teig entsteht.",
       "Apfelspalten vorsichtig unter den Teig heben.",
       "Teig in eine gefettete Springform (26 cm) füllen und glatt streichen.",
@@ -99,7 +99,7 @@ steps: [
       "Stäbchenprobe machen: Holzstäbchen sollte sauber herauskommen.",
       "Kuchen aus dem Ofen nehmen und 10 Minuten in der Form abkühlen lassen.",
       "Kuchen aus der Form lösen und auf einem Kuchengitter vollständig auskühlen lassen.",
-      "Mit Puderzucker bestäuben und servieren. Guten Appetit!"
+      "Mit etwas Puderzucker bestäuben und servieren. Guten Appetit!"
     ]
   },
   {
