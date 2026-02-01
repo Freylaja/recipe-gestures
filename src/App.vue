@@ -3,13 +3,14 @@ import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { initVision } from "./vision";
 import { GestureEngine, type GestureEvent } from "./gestures";
 import { TimerController, MultiTimerManager, type RunningTimer } from "./timer";
-import { loadObjectDetectionModel, detectObjects } from "./objectDetection";
+import { loadObjectDetectionModel, detectObjects, findMatchingDetectClass } from "./objectDetection";
 
 import IngredientScanner from "./components/IngredientScanner.vue";
 import RecipeView from "./components/RecipeView.vue";
 import GestureOverlays from "./components/GestureOverlays.vue";
 import RecipeSelection from "./components/RecipeSelection.vue";
 import TimerOverlay from "./components/TimerOverlay.vue";
+import RecipeCompletion from "./components/RecipeCompletion.vue";
 
 const videoRef = ref<HTMLVideoElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
@@ -174,8 +175,8 @@ const recognitionSuccess = ref(false);
 // Thumb hold to confirm all ingredients
 const thumbHoldProgress = ref(0);
 
-// Mode: 'recipe-selection', 'ingredients' or 'recipe'
-const mode = ref<'recipe-selection' | 'ingredients' | 'recipe'>('recipe-selection');
+// Mode: 'recipe-selection', 'ingredients', 'recipe', or 'recipe-completion'
+const mode = ref<'recipe-selection' | 'ingredients' | 'recipe' | 'recipe-completion'>('recipe-selection');
 
 // Steps - will be populated from selected recipe
 const steps = ref<string[]>([]);
@@ -192,7 +193,8 @@ const activeTimers = ref<RunningTimer[]>([]);
 const detectedTimerSeconds = ref<number | null>(null);
 const showTimerConfirmation = ref(false);
 
-// Fist progress for canceling
+// Track completion state for recipe-completion mode
+const completionThumbProgress = ref(0);// Fist progress for canceling
 const fistProgress = ref(0);
 
 // Open palm progress tracking
@@ -278,9 +280,17 @@ function checkTimerInCurrentStep() {
 }
 
 function nextStep() {
-  step.value = Math.min(step.value + 1, steps.value.length - 1);
-  checkTimerInCurrentStep();
-  showToast("Weiter");
+  // Check if we're at the last step
+  if (step.value >= steps.value.length - 1) {
+    // Go to completion screen
+    mode.value = 'recipe-completion';
+    completionThumbProgress.value = 0;
+    showToast("✨ Glückwunsch!");
+  } else {
+    step.value = Math.min(step.value + 1, steps.value.length - 1);
+    checkTimerInCurrentStep();
+    showToast("Weiter");
+  }
 }
 function prevStep() {
   step.value = Math.max(step.value - 1, 0);
@@ -315,6 +325,19 @@ function cancelRecipe() {
   showTimerConfirmation.value = false;
   multiTimerManager.clearAllTimers();
   showToast("Rezept abgebrochen");
+}
+
+function backToRecipeSelection() {
+  mode.value = 'recipe-selection';
+  step.value = 0;
+  selectedRecipe.value = null;
+  ingredients.value = [];
+  steps.value = [];
+  detectedTimerSeconds.value = null;
+  showTimerConfirmation.value = false;
+  completionThumbProgress.value = 0;
+  multiTimerManager.clearAllTimers();
+  showToast("Neue Rezeptauswahl");
 }
 
 function nextRecipe() {
@@ -423,6 +446,18 @@ function handleGesture(ev: GestureEvent) {
     }
     return; // Don't handle other gestures in ingredients mode
   }
+
+  // Recipe Completion mode - thumbs up within 3 seconds to return
+  if (mode.value === 'recipe-completion') {
+    if (ev.type === "THUMBS_UP_PROGRESS") {
+      completionThumbProgress.value = ev.progress;
+    }
+    if (ev.type === "THUMBS_UP_HOLD") {
+      backToRecipeSelection();
+      completionThumbProgress.value = 0;
+    }
+    return; // Don't handle other gestures in completion mode
+  }
   
   // Recipe mode
   // Handle fist for canceling/exiting recipe
@@ -452,8 +487,8 @@ function handleGesture(ev: GestureEvent) {
   
   // Handle pinch-flick for recipe navigation (only when timer closed)
   if (!timerOpen.value) {
-    if (ev.type === "PINCH_FLICK_LEFT") nextStep();
-    if (ev.type === "PINCH_FLICK_RIGHT") prevStep();
+    if (ev.type === "PINCH_FLICK_LEFT") prevStep();
+    if (ev.type === "PINCH_FLICK_RIGHT") nextStep();
   }
   
   // Handle timer menu (only when timer open)
@@ -533,35 +568,56 @@ async function detectObjectsLoop() {
   try {
     const objects = await detectObjects(videoRef.value);
     
-    // Debug: Log all detected objects with scores
+    // Debug: Log all detected objects with scores (including low confidence)
     if (objects.length > 0) {
-      console.log('Detected objects:', objects.map(o => `${o.class} (${(o.score * 100).toFixed(1)}%)`));
+      const allDetectedLog = objects.map(o => `${o.class} (${(o.score * 100).toFixed(1)}%)`).join(', ');
+      console.log('All detected objects (unfiltered):', allDetectedLog);
     }
     
     const detected = objects
-      .filter(obj => obj.score > 0.4) // Lowered from 0.5 to 0.4 for better orange detection
+      .filter(obj => obj.score > 0.25) // Further lowered threshold for orange detection
       .map(obj => obj.class);
+    
+    // Debug: Log filtered objects and current ingredient requirements
+    if (detected.length > 0 || ingredients.value.some(ing => !ing.checked)) {
+      const currentUnchecked = ingredients.value.find(ing => !ing.checked);
+      if (currentUnchecked) {
+        console.log(`Current ingredient: ${currentUnchecked.name} (looking for: ${currentUnchecked.detectClass}), Detected (threshold 0.25): [${detected.join(', ')}]`);
+      }
+    }
     
     detectedObjects.value = detected;
     
     // Auto-check ingredients based on detected objects FIRST
+    let allIngredientsChecked = false;
     for (const ingredient of ingredients.value) {
-      if (!ingredient.checked && ingredient.detectClass && detected.includes(ingredient.detectClass)) {
-        ingredient.checked = true;
-        showToast(`✓ ${ingredient.name} erkannt!`);
-        
-        // Check if all ingredients are now checked
-        if (ingredients.value.every(ing => ing.checked)) {
-          setTimeout(() => {
-            startRecipeMode();
-            showToast("Alle Zutaten da! Los geht's!");
-          }, 1000);
-          return; // Exit early if all done
+      if (!ingredient.checked && ingredient.detectClass) {
+        // Check if any detected object matches this ingredient's detectClass
+        const matchedDetected = detected.find(d => findMatchingDetectClass(d, [ingredient.detectClass]) !== null);
+        if (matchedDetected) {
+          ingredient.checked = true;
+          showToast(`✓ ${ingredient.name} erkannt!`);
+          
+          // Check if all ingredients are now checked
+          if (ingredients.value.every(ing => ing.checked)) {
+            allIngredientsChecked = true;
+            setTimeout(() => {
+              startRecipeMode();
+              showToast("Alle Zutaten da! Los geht's!");
+            }, 1000);
+          }
+          
+          // Only check ONE ingredient per detection loop
+          break;
         }
-        
-        // Only check ONE ingredient per detection loop
-        break;
       }
+    }
+    
+    // If all ingredients are checked, skip hint update and wait before returning
+    if (allIngredientsChecked) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      objectDetectionRaf = requestAnimationFrame(detectObjectsLoop);
+      return;
     }
     
     // Wait a bit before next detection to avoid duplicates
@@ -573,7 +629,8 @@ async function detectObjectsLoop() {
     
     if (currentIngredient) {
       const detectClass = (currentIngredient as any).detectClass;
-      const isDetected = !!detectClass && detected.includes(detectClass);
+      // Check if any detected object matches this ingredient's detectClass
+      const isDetected = !!detectClass && detected.some(d => findMatchingDetectClass(d, [detectClass]) !== null);
       recognitionSuccess.value = isDetected;
       if (isDetected) {
         recognitionHint.value = `${currentIngredient.name} erkannt!`;
@@ -658,6 +715,14 @@ onBeforeUnmount(() => {
       :detected-objects="detectedObjects"
       :recognition-hint="recognitionHint"
       :recognition-success="recognitionSuccess"
+    />
+    
+    <!-- Recipe Completion Screen -->
+    <RecipeCompletion 
+      v-else-if="mode === 'recipe-completion'"
+      :recipe-name="selectedRecipe?.title ?? 'Rezept'"
+      :thumb-up-progress="completionThumbProgress"
+      @back-to-selection="backToRecipeSelection"
     />
     
     <!-- Recipe Steps View -->

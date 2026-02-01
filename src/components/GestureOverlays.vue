@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 const props = defineProps<{
-  mode: 'recipe-selection' | 'ingredients' | 'recipe'
+  mode: 'recipe-selection' | 'ingredients' | 'recipe' | 'recipe-completion'
   timerOpen: boolean
   palmProgress: number
   pinchSwipeDeltaX: number
@@ -33,8 +33,8 @@ const invertedDeltaY = computed(() => props.pinchSwipeDeltaY)
     <span class="hintText">{{ props.recognitionHint }}</span>
   </div>
 
-  <!-- Thumbs-up hold progress (ingredients mode OR recipe mode with timer confirmation) -->
-  <div v-if="(props.mode === 'ingredients' || props.mode === 'recipe') && props.thumbHoldProgress > 0" class="thumbHoldProgress">
+  <!-- Thumbs-up hold progress (ingredients mode OR recipe mode with timer confirmation OR recipe-completion mode) -->
+  <div v-if="(props.mode === 'ingredients' || props.mode === 'recipe' || props.mode === 'recipe-completion') && props.thumbHoldProgress > 0" class="thumbHoldProgress">
     <svg width="90" height="90">
       <circle cx="45" cy="45" r="34" fill="none" stroke="#374151" stroke-width="6" />
       <circle cx="45" cy="45" r="34" fill="none" stroke="#3b82f6" stroke-width="6" stroke-linecap="round" :stroke-dasharray="`${props.thumbHoldProgress * 213} 213`" transform="rotate(-90 45 45)" />

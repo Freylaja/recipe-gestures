@@ -79,7 +79,7 @@ function formatTime(seconds: number): string {
               </svg>
             </div>
             <div class="timer-hint-text">
-              <div class="hint-label">Timer verfügbar</div>
+              <div class="hint-label">Timer Einstellungen</div>
               <div class="hint-action">Offene Hand 3s halten zum Öffnen</div>
             </div>
           </div>
