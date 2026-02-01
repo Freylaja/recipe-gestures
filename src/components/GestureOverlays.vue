@@ -18,7 +18,9 @@ const invertedDeltaX = computed(() => -props.pinchSwipeDeltaX)
 const invertedDeltaY = computed(() => props.pinchSwipeDeltaY)
 </script>
 <template>
-  <!-- Palm progress indicator -->
+  <!-- Overlay container that fills the parent -->
+  <div class="gesture-overlay-container">
+    <!-- Palm progress indicator -->
   <div v-if="props.palmProgress > 0" class="palmProgress">
     <svg width="90" height="90">
       <circle cx="45" cy="45" r="34" fill="none" stroke="#374151" stroke-width="6" />
@@ -106,9 +108,19 @@ const invertedDeltaY = computed(() => props.pinchSwipeDeltaY)
       </div>
     </div>
   </div>
+  </div>
 </template>
 
 <style scoped>
+/* Container fills the parent */
+.gesture-overlay-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none; /* Let clicks pass through */
+}
+
 /* All overlays are absolutely positioned within the parent */
 .palmProgress {
   position: absolute;

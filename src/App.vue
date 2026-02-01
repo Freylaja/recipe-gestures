@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref } from "vue";
+import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { initVision } from "./vision";
 import { GestureEngine, type GestureEvent } from "./gestures";
 import { TimerController, MultiTimerManager, type RunningTimer } from "./timer";
@@ -209,11 +209,43 @@ const timerValues = ref([0, 10, 0]); // [Stunden, Minuten, Sekunden]
 
 // Manual timer slider (minutes)
 const manualTimerMinutes = ref(5);
+const timerSliderPosition = ref(0.5); // 0.0 to 1.0 for smooth continuous position
 const pinchStartX = ref<number | null>(null);
+const pinchStartSliderPosition = ref<number | null>(null);
+const pinchStartMinutes = ref<number | null>(null);
 
 // Timer clock rotation
 const timerAngle = ref(0); // Current clock angle in radians
 const maxMinutes = 60; // Maximum timer setting in minutes
+
+// Track which timers have been "pinged" to avoid multiple sounds
+const timersPinged = ref<Set<number>>(new Set());
+
+// Function to play bell sound when timer finishes
+function playBellSound() {
+  // Play bell sound 3 times with delays
+  for (let i = 0; i < 3; i++) {
+    setTimeout(() => {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      // Bell-like sound: 800Hz sine wave
+      oscillator.frequency.value = 800;
+      oscillator.type = 'sine';
+      
+      // Quick volume envelope for bell effect
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+      
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 0.5);
+    }, i * 800); // 800ms between each beep
+  }
+}
 
 function showToast(msg: string) {
   toast.value = msg;
@@ -429,7 +461,11 @@ function startTimerWithCustomTime() {
 
 const timer = new TimerController((label) => (timerLabel.value = label));
 const multiTimerManager = new MultiTimerManager(() => {
-  activeTimers.value = multiTimerManager.getActiveTimers();
+  const newTimers = multiTimerManager.getActiveTimers();
+  // Clean up pinged timers that no longer exist
+  const activeIds = new Set(newTimers.map(t => t.id));
+  timersPinged.value = new Set([...timersPinged.value].filter(id => activeIds.has(id)));
+  activeTimers.value = newTimers;
 });
 const engine = new GestureEngine();
 
@@ -527,36 +563,34 @@ function handleGesture(ev: GestureEvent) {
     
     // Adjust timer slider with pinch-swipe gesture
     if (ev.type === "PINCH_SWIPE_PROGRESS") {
-      // Only update if we have a valid position (not the reset event with deltaX: 0)
-      if (ev.deltaX !== 0) {
+      // Only update if we have a valid hand position
+      if (typeof ev.x === 'number' && !isNaN(ev.x)) {
         // Initialize start position on first progress event
         if (pinchStartX.value === null) {
           pinchStartX.value = ev.x;
+          pinchStartSliderPosition.value = timerSliderPosition.value;
         }
         
-        // Map hand X position (0.0 to 1.0) to timer minutes (1 to 60)
-        // Invert X because camera is mirrored (scaleX(-1))
-        // Left side (0.2) = 60 minutes, right side (0.8) = 1 minute
-        const screenLeft = 0.2;
-        const screenRight = 0.8;
-        const screenRange = screenRight - screenLeft;
+        // Calculate movement relative to start of THIS pinch
+        const movementAmount = ev.x - pinchStartX.value;
         
-        // Invert and clamp position to screen range
-        const invertedX = 1 - ev.x;
-        const clampedX = Math.max(screenLeft, Math.min(screenRight, invertedX));
+        // Movement range: 1.0 units = full slider range (0.0 to 1.0)
+        // Invert because camera is mirrored: moving RIGHT = moving LEFT in slider = MORE minutes
+        const baselinePosition = pinchStartSliderPosition.value!;
+        const newPosition = baselinePosition - movementAmount; // negative because of camera mirror
         
-        // Map to minutes (1-60)
-        const normalizedPosition = (clampedX - screenLeft) / screenRange;
-        manualTimerMinutes.value = Math.round(1 + normalizedPosition * 59);
-      } else {
-        // Reset when hand is released (deltaX: 0)
-        pinchStartX.value = null;
+        // Clamp to 0.0 to 1.0
+        timerSliderPosition.value = Math.max(0, Math.min(1, newPosition));
+        
+        // Convert position to minutes for display
+        manualTimerMinutes.value = Math.round(1 + timerSliderPosition.value * 59);
       }
     }
     
-    // Reset start position when pinch ends with a flick
+    // Reset start position when pinch ends
     if (ev.type === "PINCH_FLICK_LEFT" || ev.type === "PINCH_FLICK_RIGHT") {
       pinchStartX.value = null;
+      pinchStartSliderPosition.value = null;
     }
     
     // Start new timer with selected minutes (thumbs up for 3 seconds)
@@ -666,6 +700,21 @@ onMounted(async () => {
   console.log('Object detection ready!');
   
   vision = await initVision(videoRef.value, canvasRef.value);
+
+  // Watch for finished timers and play sound
+  watch(() => activeTimers.value, (timers) => {
+    timers.forEach(timer => {
+      if (timer.hasFinished && !timersPinged.value.has(timer.id)) {
+        timersPinged.value.add(timer.id);
+        playBellSound();
+        
+        // Remove timer after 3 seconds (after 3 beeps finish: 0.5s + 0.8s + 0.8s = 2.1s, so 3s is safe)
+        setTimeout(() => {
+          multiTimerManager.removeTimer(timer.id);
+        }, 3000);
+      }
+    });
+  }, { deep: true });
 
   const loop = async () => {
     if (!vision) return;
