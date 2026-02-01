@@ -7,8 +7,6 @@ export type GestureEvent =
   | { type: "SWIPE_DOWN" }
   | { type: "PINCH_FLICK_LEFT" }
   | { type: "PINCH_FLICK_RIGHT" }
-  | { type: "ROTATE"; angle: number; deltaAngle: number }
-  | { type: "POINT_CLOCK"; angle: number }
   | { type: "OPEN_PALM" }
   | { type: "OPEN_PALM_PROGRESS"; progress: number }
   | { type: "THUMBS_UP_PROGRESS"; progress: number }
@@ -19,16 +17,6 @@ export type GestureEvent =
   | { type: "FIST_PROGRESS"; progress: number };
 
 export class GestureEngine {
-  private lastX: number | null = null;
-  private lastY: number | null = null;
-  private lastT: number | null = null;
-  private swipeCooldown = 0;
-  
-  // Swipe tracking
-  private swipeStartX: number | null = null;
-  private swipeStartY: number | null = null;
-  private swipeStartT: number | null = null;
-  
   // Pinch-swipe tracking
   private pinchActive = false;
   private pinchStartX: number | null = null;
@@ -37,11 +25,6 @@ export class GestureEngine {
   private pinchLastX: number | null = null;
   private pinchLastY: number | null = null;
   private pinchSwipeCooldown = 0;
-  
-  // Pinch-clock tracking for egg timer
-  private pinchClockActive = false;
-  private clockCenterX = 0.5;
-  private clockCenterY = 0.5;
 
   private poseCooldown = 0;
   
@@ -64,8 +47,6 @@ export class GestureEngine {
     emit: (e: GestureEvent) => void
   ) {
     if (!result?.landmarks?.length) {
-      this.lastX = this.lastY = this.lastT = null;
-      
       // Reset palm progress when no hands detected
       if (this.openPalmStartTime !== null) {
         emit({ type: "OPEN_PALM_PROGRESS", progress: 0 });
@@ -84,9 +65,10 @@ export class GestureEngine {
     }
 
     const lm = result.landmarks[0];
+    if (!lm || lm.length < 21) return;
 
     // Calculate center and pinch early for all detections
-    const pinch = dist(lm[4], lm[8]);
+    const pinch = dist(lm[4]!, lm[8]!);
     const center = handCenter(lm);
     // More strict pinch detection: thumb and index finger must actually touch (< 0.03)
     // This prevents accidental pinch recognition
@@ -196,8 +178,6 @@ export class GestureEngine {
     
     // Check for pinch - allow swipe tracking everywhere
     if (isPinching) {
-      const distanceFromClockCenter = Math.hypot(center.x - this.clockCenterX, center.y - this.clockCenterY);
-      
       // Track pinch-swipe movement everywhere
       if (t > this.pinchSwipeCooldown) {
         if (!this.pinchActive) {
@@ -219,18 +199,8 @@ export class GestureEngine {
         }
       }
       
-      // Also emit clock control if in clock area (for timer when open)
-      if (distanceFromClockCenter < 0.35) {
-        this.pinchClockActive = true;
-        const clockAngle = Math.atan2(center.y - this.clockCenterY, center.x - this.clockCenterX);
-        emit({ type: "PINCH_CLOCK", angle: clockAngle });
-      }
     } else {
       // Pinch released - check if swipe should be triggered
-      if (this.pinchClockActive) {
-        this.pinchClockActive = false;
-      }
-      
       // Check for swipe on release
       if (this.pinchActive && this.pinchStartX !== null && this.pinchStartY !== null && this.pinchStartT !== null && this.pinchLastX !== null && this.pinchLastY !== null) {
         const dx = this.pinchLastX - this.pinchStartX;
@@ -252,7 +222,8 @@ export class GestureEngine {
         }
         
         // Reset progress
-        emit({ type: "PINCH_SWIPE_PROGRESS", deltaX: 0, deltaY: 0 });
+        const resetX = this.pinchLastX ?? this.pinchStartX ?? 0;
+        emit({ type: "PINCH_SWIPE_PROGRESS", deltaX: 0, deltaY: 0, x: resetX });
       }
       
       // Reset pinch tracking
@@ -264,77 +235,47 @@ export class GestureEngine {
       this.pinchLastY = null;
     }
 
-    // Check for pointing finger to set clock directly
-    if (isPointing(lm)) {
-      const fingerTip = lm[8]; // Index finger tip
-      const clockAngle = Math.atan2(fingerTip.y - this.centerY, fingerTip.x - this.centerX);
-      emit({ type: "POINT_CLOCK", angle: clockAngle });
-    }
-
-    this.lastX = center.x;
-    this.lastY = center.y;
-    this.lastT = t;
   }
 }
 
 function handCenter(lm: NormalizedLandmark[]) {
-  return { x: (lm[0].x + lm[9].x) / 2, y: (lm[0].y + lm[9].y) / 2 };
+  return { x: (lm[0]!.x + lm[9]!.x) / 2, y: (lm[0]!.y + lm[9]!.y) / 2 };
 }
 
 function dist(a: NormalizedLandmark, b: NormalizedLandmark) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function clamp(v: number, lo: number, hi: number) {
-  return Math.max(lo, Math.min(hi, v));
-}
-
 function isOpenPalm(lm: NormalizedLandmark[]) {
-  const w = lm[0];
-  const tips = [4, 8, 12, 16, 20];
-  const bases = [2, 5, 9, 13, 17];
+  const w = lm[0]!;
   let extended = 0;
-  for (let i = 0; i < tips.length; i++) {
-    if (dist(lm[tips[i]], w) > dist(lm[bases[i]], w) * 1.15) extended++;
+  const pairs = [
+    [4, 2],
+    [8, 5],
+    [12, 9],
+    [16, 13],
+    [20, 17]
+  ] as const;
+  for (const [tipIndex, baseIndex] of pairs) {
+    const tip = lm[tipIndex]!;
+    const base = lm[baseIndex]!;
+    if (dist(tip, w) > dist(base, w) * 1.15) extended++;
   }
   return extended >= 4;
 }
 
-function isPointing(lm: NormalizedLandmark[]) {
-  const wrist = lm[0];
-  const indexTip = lm[8];
-  const indexMcp = lm[5]; // index finger base
-  const middleTip = lm[12];
-  const ringTip = lm[16];
-  const pinkyTip = lm[20];
-  const thumbTip = lm[4];
-  
-  // Index finger should be extended (tip further from wrist than base)
-  const indexExtended = dist(indexTip, wrist) > dist(indexMcp, wrist) * 1.15;
-  
-  // Other fingers should be folded (tips closer to wrist than index finger)
-  const othersFolded = [
-    dist(middleTip, wrist) < dist(indexTip, wrist) * 0.85,
-    dist(ringTip, wrist) < dist(indexTip, wrist) * 0.85,
-    dist(pinkyTip, wrist) < dist(indexTip, wrist) * 0.85,
-    dist(thumbTip, wrist) < dist(indexTip, wrist) * 0.9
-  ].filter(Boolean).length >= 3;
-  
-  return indexExtended && othersFolded;
-}
-
 function isThumbsUp(lm: NormalizedLandmark[]) {
-  const wrist = lm[0];
-  const thumbTip = lm[4];
+  const wrist = lm[0]!;
+  const thumbTip = lm[4]!;
   
   // Thumb must be extended (far from wrist)
   const thumbDistance = dist(thumbTip, wrist);
   
   // Get other finger tips
-  const indexTip = lm[8];
-  const middleTip = lm[12];
-  const ringTip = lm[16];
-  const pinkyTip = lm[20];
+  const indexTip = lm[8]!;
+  const middleTip = lm[12]!;
+  const ringTip = lm[16]!;
+  const pinkyTip = lm[20]!;
   
   const indexDistance = dist(indexTip, wrist);
   const middleDistance = dist(middleTip, wrist);
@@ -359,14 +300,21 @@ function isThumbsUp(lm: NormalizedLandmark[]) {
 }
 
 function isFist(lm: NormalizedLandmark[]) {
-  const wrist = lm[0];
-  const tips = [4, 8, 12, 16, 20]; // thumb, index, middle, ring, pinky tips
-  const bases = [2, 5, 9, 13, 17]; // thumb, index, middle, ring, pinky bases
+  const wrist = lm[0]!;
   
   // All fingers should be folded (tips closer to wrist than bases)
   let foldedCount = 0;
-  for (let i = 0; i < tips.length; i++) {
-    if (dist(lm[tips[i]], wrist) < dist(lm[bases[i]], wrist) * 0.85) {
+  const pairs = [
+    [4, 2],
+    [8, 5],
+    [12, 9],
+    [16, 13],
+    [20, 17]
+  ] as const;
+  for (const [tipIndex, baseIndex] of pairs) {
+    const tip = lm[tipIndex]!;
+    const base = lm[baseIndex]!;
+    if (dist(tip, wrist) < dist(base, wrist) * 0.85) {
       foldedCount++;
     }
   }

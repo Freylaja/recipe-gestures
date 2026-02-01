@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from "vue";
+
 const props = defineProps<{
   steps: string[]
   step: number
@@ -6,6 +8,8 @@ const props = defineProps<{
   showTimerConfirmation: boolean
   detectedTimerSeconds: number | null
 }>()
+
+const stepText = computed(() => props.steps[props.step] ?? "");
 
 const emit = defineEmits<{
   (e: 'prev'): void
@@ -45,7 +49,7 @@ function formatTime(seconds: number): string {
           <!-- Step content -->
           <div class="step-content">
             <h2 class="step-title">Schritt {{ props.step + 1 }} von {{ props.steps.length }}</h2>
-            <p class="step-text">{{ props.steps[props.step] }}</p>
+            <p class="step-text">{{ stepText }}</p>
           </div>
 
           <!-- Timer confirmation prompt (when timer detected in step) -->
@@ -68,7 +72,7 @@ function formatTime(seconds: number): string {
           </div>
 
           <!-- Old timer hint (only show if no timer was auto-detected) -->
-          <div v-else-if="props.steps[props.step].toLowerCase().includes('min') || props.steps[props.step].toLowerCase().includes('stunde')" class="timer-hint">
+          <div v-else-if="stepText.toLowerCase().includes('min') || stepText.toLowerCase().includes('stunde')" class="timer-hint">
             <div class="timer-hint-icon">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />

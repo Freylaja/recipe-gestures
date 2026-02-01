@@ -202,21 +202,11 @@ const palmProgress = ref(0);
 const pinchSwipeDeltaX = ref(0);
 const pinchSwipeDeltaY = ref(0);
 
-// Timer unit selection
-const timerUnits = ['Sekunden', 'Minuten', 'Stunden'];
-const currentUnit = ref(0); // 0=Sekunden, 1=Minuten, 2=Stunden
-const timerValues = ref([0, 10, 0]); // [Stunden, Minuten, Sekunden]
-
 // Manual timer slider (minutes)
 const manualTimerMinutes = ref(5);
 const timerSliderPosition = ref(0.5); // 0.0 to 1.0 for smooth continuous position
 const pinchStartX = ref<number | null>(null);
 const pinchStartSliderPosition = ref<number | null>(null);
-const pinchStartMinutes = ref<number | null>(null);
-
-// Timer clock rotation
-const timerAngle = ref(0); // Current clock angle in radians
-const maxMinutes = 60; // Maximum timer setting in minutes
 
 // Track which timers have been "pinged" to avoid multiple sounds
 const timersPinged = ref<Set<number>>(new Set());
@@ -299,12 +289,14 @@ function prevStep() {
 }
 
 function selectRecipe(index: number) {
-  selectedRecipe.value = recipes.value[index];
-  ingredients.value = JSON.parse(JSON.stringify(selectedRecipe.value.ingredients));
-  steps.value = [...selectedRecipe.value.steps];
+  const recipe = recipes.value[index];
+  if (!recipe) return;
+  selectedRecipe.value = recipe;
+  ingredients.value = JSON.parse(JSON.stringify(recipe.ingredients));
+  steps.value = [...recipe.steps];
   mode.value = 'ingredients';
   step.value = 0;
-  showToast(`${selectedRecipe.value.title} ausgewählt!`);
+  showToast(`${recipe.title} ausgewählt!`);
 }
 
 function startRecipeMode() {
@@ -336,96 +328,25 @@ function toggleTimer(force?: boolean) {
   timerOpen.value = force ?? !timerOpen.value;
 }
 
-function checkNextIngredient() {
-  const uncheckedIndex = ingredients.value.findIndex(ing => !ing.checked);
-  if (uncheckedIndex !== -1) {
-    ingredients.value[uncheckedIndex].checked = true;
-    showToast(`✓ ${ingredients.value[uncheckedIndex].name}`);
-    
-    // Check if all ingredients are checked
-    if (ingredients.value.every(ing => ing.checked)) {
-      setTimeout(() => {
-        startRecipeMode();
-        showToast("Alle Zutaten da! Los geht's!");
-      }, 800);
-    }
-  }
-}
-
 function uncheckLastIngredient() {
   const checkedIndex = ingredients.value.findIndex(ing => ing.checked);
   if (checkedIndex !== -1) {
     // Find last checked
     let lastChecked = -1;
     for (let i = ingredients.value.length - 1; i >= 0; i--) {
-      if (ingredients.value[i].checked) {
+      const item = ingredients.value[i];
+      if (item?.checked) {
         lastChecked = i;
         break;
       }
     }
     if (lastChecked !== -1) {
-      ingredients.value[lastChecked].checked = false;
-      showToast(`✗ ${ingredients.value[lastChecked].name}`);
+      const item = ingredients.value[lastChecked];
+      if (item) {
+        item.checked = false;
+        showToast(`✗ ${item.name}`);
+      }
     }
-  }
-}
-
-function adjustTimerValue(direction: number) {
-  const unitIndex = [2, 1, 0][currentUnit.value]; // Map to timerValues index
-  const maxValues = [23, 59, 59]; // hours, minutes, seconds
-  const steps = [1, 1, 5]; // step sizes for each unit
-  
-  timerValues.value[unitIndex] = Math.max(0, 
-    Math.min(maxValues[unitIndex], 
-      timerValues.value[unitIndex] + (direction * steps[currentUnit.value])
-    )
-  );
-  
-  showToast(`${timerValues.value[unitIndex]} ${timerUnits[currentUnit.value]}`);
-}
-
-function handleClockPinch(angle: number) {
-  // Set timer angle to pinch position (same as pointing, but with pinch gesture)
-  timerAngle.value = angle;
-  
-  // Convert angle to minutes (full rotation = maxMinutes)
-  let normalizedAngle = angle;
-  
-  // Keep angle in positive range 0 to 2π
-  while (normalizedAngle < 0) normalizedAngle += 2 * Math.PI;
-  while (normalizedAngle > 2 * Math.PI) normalizedAngle -= 2 * Math.PI;
-  
-  const minutes = Math.floor((normalizedAngle / (2 * Math.PI)) * maxMinutes);
-  
-  // Set timer values (convert to hours, minutes, seconds)
-  timerValues.value[0] = Math.floor(minutes / 60); // hours
-  timerValues.value[1] = minutes % 60; // minutes
-  timerValues.value[2] = 0; // seconds
-}
-
-function handleClockPointing(angle: number) {
-  // Set timer angle directly to where finger is pointing
-  timerAngle.value = angle;
-  
-  // Convert angle to minutes (full rotation = maxMinutes)
-  // Direct mapping: finger direction = clock hand direction
-  let normalizedAngle = angle;
-  
-  // Keep angle in positive range 0 to 2π
-  while (normalizedAngle < 0) normalizedAngle += 2 * Math.PI;
-  while (normalizedAngle > 2 * Math.PI) normalizedAngle -= 2 * Math.PI;
-  
-  const minutes = Math.floor((normalizedAngle / (2 * Math.PI)) * maxMinutes);
-  
-  // Set timer values (convert to hours, minutes, seconds)
-  timerValues.value[0] = Math.floor(minutes / 60); // hours
-  timerValues.value[1] = minutes % 60; // minutes
-  timerValues.value[2] = 0; // seconds
-  
-  // Show current time setting
-  if (minutes > 0) {
-    const timeStr = minutes >= 60 ? `${Math.floor(minutes/60)}h ${minutes%60}m` : `${minutes}m`;
-    showToast(timeStr);
   }
 }
 
@@ -442,23 +363,6 @@ function startDetectedTimer() {
   }
 }
 
-function startTimerWithCustomTime() {
-  const totalSeconds = timerValues.value[0] * 3600 + timerValues.value[1] * 60 + timerValues.value[2];
-  if (totalSeconds > 0) {
-    // Create a label for the timer based on current step
-    const timerLabel = `Schritt ${step.value + 1}`;
-    multiTimerManager.createTimer(totalSeconds, timerLabel);
-    
-    // Also keep the old single timer for the modal
-    timer.setTime(totalSeconds);
-    timer.start();
-    
-    // Close timer modal
-    toggleTimer(false);
-    showToast("Timer gestartet!");
-  }
-}
-
 const timer = new TimerController((label) => (timerLabel.value = label));
 const multiTimerManager = new MultiTimerManager(() => {
   const newTimers = multiTimerManager.getActiveTimers();
@@ -472,7 +376,6 @@ const engine = new GestureEngine();
 let raf = 0;
 let objectDetectionRaf = 0;
 let vision: Awaited<ReturnType<typeof initVision>> | null = null;
-let objectDetectionModel: any = null;
 
 function handleGesture(ev: GestureEvent) {
   // Handle pinch swipe progress globally (for visual feedback)
@@ -481,8 +384,7 @@ function handleGesture(ev: GestureEvent) {
     pinchSwipeDeltaY.value = ev.deltaY;
   }
   // Reset pinch swipe deltas when flick completes
-  if (ev.type === "PINCH_FLICK_LEFT" || ev.type === "PINCH_FLICK_RIGHT" || 
-      ev.type === "PINCH_FLICK_UP" || ev.type === "PINCH_FLICK_DOWN") {
+  if (ev.type === "PINCH_FLICK_LEFT" || ev.type === "PINCH_FLICK_RIGHT") {
     pinchSwipeDeltaX.value = 0;
     pinchSwipeDeltaY.value = 0;
   }
@@ -595,7 +497,7 @@ function handleGesture(ev: GestureEvent) {
     
     // Start new timer with selected minutes (thumbs up for 3 seconds)
     if (ev.type === "THUMBS_UP_HOLD") {
-      const timerId = multiTimerManager.createTimer(manualTimerMinutes.value * 60, "Manual Timer");
+      multiTimerManager.createTimer(manualTimerMinutes.value * 60, "Manual Timer");
       showToast(`⏱️ Timer gestartet: ${manualTimerMinutes.value} Min`);
       thumbHoldProgress.value = 0;
       return;
@@ -696,7 +598,7 @@ onMounted(async () => {
   
   // Load object detection model
   console.log('Loading object detection model...');
-  objectDetectionModel = await loadObjectDetectionModel();
+  await loadObjectDetectionModel();
   console.log('Object detection ready!');
   
   vision = await initVision(videoRef.value, canvasRef.value);
