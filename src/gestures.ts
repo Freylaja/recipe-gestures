@@ -347,7 +347,7 @@ function isThumbsUp(lm: NormalizedLandmark[]) {
   const foldedCount = [indexFolded, middleFolded, ringFolded, pinkyFolded].filter(Boolean).length;
   
   // Thumb must be extended at least 0.3 (absolute minimum distance)
-  const thumbSufficientlyExtended = thumbDistance > 0.3;
+  const thumbSufficientlyExtended = thumbDistance > 0.2;
   
   return thumbSufficientlyExtended && foldedCount >= 2;
 }
